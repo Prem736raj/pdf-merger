@@ -17,6 +17,7 @@ import com.example.util.PdfSaveManager
 import com.example.util.PdfThumbnailHelper
 import com.example.util.SamplePdfGenerator
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,6 +74,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _uiState = MutableStateFlow(PdfMergerUiState())
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
+    private val thumbnailJobs = mutableMapOf<String, Job>()
 
     private val documentColorPalette = listOf(
         Color(0xFF4F46E5), // Indigo
@@ -177,23 +179,13 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
             try {
                 val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(sanitizedFile) }
-                val pages = mutableListOf<PdfPageItem>()
-                for (pageIndex in 0 until pageCount) {
-                    val thumbnail = PdfThumbnailHelper.renderPageThumbnail(
-                        context = context,
-                        pdfFile = sanitizedFile,
+                val pages = (0 until pageCount).map { pageIndex ->
+                    PdfPageItem(
+                        id = "${doc.id}_p$pageIndex",
+                        documentId = doc.id,
+                        documentName = doc.fileName,
                         pageIndex = pageIndex,
-                        documentId = doc.id
-                    )
-                    pages.add(
-                        PdfPageItem(
-                            id = "${doc.id}_p$pageIndex",
-                            documentId = doc.id,
-                            documentName = doc.fileName,
-                            pageIndex = pageIndex,
-                            thumbnailFile = thumbnail,
-                            accentColor = doc.accentColor
-                        )
+                        accentColor = doc.accentColor
                     )
                 }
 
@@ -273,14 +265,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                     newDocs.add(docItem)
 
                     for (p in 0 until pageCount) {
-                        val thumb = PdfThumbnailHelper.renderPageThumbnail(context, file, p, docId)
                         newPages.add(
                             PdfPageItem(
                                 id = "${docId}_p$p",
                                 documentId = docId,
                                 documentName = file.name,
                                 pageIndex = p,
-                                thumbnailFile = thumb,
                                 accentColor = color
                             )
                         )
@@ -356,19 +346,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                     newDocs.add(document)
 
                     for (pageIndex in 0 until pageCount) {
-                        val thumbnail = PdfThumbnailHelper.renderPageThumbnail(
-                            context = context,
-                            pdfFile = cachedFile,
-                            pageIndex = pageIndex,
-                            documentId = documentId
-                        )
                         newPages.add(
                             PdfPageItem(
                                 id = "${documentId}_p$pageIndex",
                                 documentId = documentId,
                                 documentName = displayName,
                                 pageIndex = pageIndex,
-                                thumbnailFile = thumbnail,
                                 accentColor = color
                             )
                         )
@@ -427,7 +410,40 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun requestThumbnail(pageId: String) {
+        val page = _uiState.value.pages.firstOrNull { it.id == pageId } ?: return
+        val currentThumbnail = page.thumbnailFile
+        if (currentThumbnail != null && currentThumbnail.exists() && currentThumbnail.length() > 0L) return
+        if (thumbnailJobs[pageId]?.isActive == true) return
+
+        val document = _uiState.value.documents.firstOrNull { it.id == page.documentId } ?: return
+        val context = getApplication<Application>()
+        thumbnailJobs[pageId] = viewModelScope.launch {
+            try {
+                val thumbnail = PdfThumbnailHelper.renderPageThumbnail(
+                    context = context,
+                    pdfFile = document.localFile,
+                    pageIndex = page.pageIndex,
+                    documentId = page.documentId
+                )
+                if (thumbnail != null && thumbnail.exists()) {
+                    _uiState.update { current ->
+                        current.copy(
+                            pages = current.pages.map { item ->
+                                if (item.id == pageId) item.copy(thumbnailFile = thumbnail) else item
+                            }
+                        )
+                    }
+                }
+            } finally {
+                thumbnailJobs.remove(pageId)
+            }
+        }
+    }
+
     fun removeDocument(documentId: String) {
+        val pageIds = _uiState.value.pages.filter { it.documentId == documentId }.map { it.id }
+        pageIds.forEach { pageId -> thumbnailJobs.remove(pageId)?.cancel() }
         val context = getApplication<Application>()
         _uiState.update { current ->
             current.copy(
@@ -546,6 +562,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deletePage(pageId: String) {
+        thumbnailJobs.remove(pageId)?.cancel()
         _uiState.update { current ->
             val updated = current.pages.filterNot { it.id == pageId }
             val updatedPreview = if (current.previewPage?.id == pageId) null else current.previewPage
@@ -578,6 +595,8 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun clearAllSessionData(notice: String) {
+        thumbnailJobs.values.forEach { it.cancel() }
+        thumbnailJobs.clear()
         val context = getApplication<Application>()
         _uiState.update {
             it.copy(

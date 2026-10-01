@@ -527,6 +527,7 @@ fun MainScreen(
                         onReversePages = { viewModel.reversePageOrder() },
                         onDeletePage = { pageId -> viewModel.deletePage(pageId) },
                         onPreviewPage = { page -> viewModel.setPreviewPage(page) },
+                        onRequestThumbnail = { pageId -> viewModel.requestThumbnail(pageId) },
                         onOpenReorderDialog = { page -> viewModel.setReorderDialogPage(page) },
                         onNavigateToSecurity = { viewModel.setTab(AppTab.SECURITY) },
                         onNavigateToBatch = { viewModel.setTab(AppTab.FILES) }

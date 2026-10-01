@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +64,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.example.model.PdfPageItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -79,6 +82,7 @@ fun PageThumbnailCard(
     onResetRotation: () -> Unit,
     onDelete: () -> Unit,
     onPreview: () -> Unit,
+    onRequestThumbnail: () -> Unit,
     onOpenReorderDialog: () -> Unit,
     onDragReorder: (dragDeltaY: Float, dragDeltaX: Float) -> Unit,
     modifier: Modifier = Modifier
@@ -95,9 +99,17 @@ fun PageThumbnailCard(
 
     val elevation = if (isDragging) 12.dp else 3.dp
 
-    val bitmap = remember(page.thumbnailFile) {
-        page.thumbnailFile?.let { file ->
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+    var bitmap by remember(page.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(page.id, page.thumbnailFile?.absolutePath) {
+        val thumbnailFile = page.thumbnailFile
+        if (thumbnailFile != null && thumbnailFile.exists() && thumbnailFile.length() > 0L) {
+            bitmap = withContext(Dispatchers.IO) {
+                BitmapFactory.decodeFile(thumbnailFile.absolutePath)
+            }
+        } else {
+            bitmap = null
+            onRequestThumbnail()
         }
     }
 

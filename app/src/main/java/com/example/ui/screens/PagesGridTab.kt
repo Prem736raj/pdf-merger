@@ -59,6 +59,7 @@ fun PagesGridTab(
     onReversePages: () -> Unit,
     onDeletePage: (pageId: String) -> Unit,
     onPreviewPage: (PdfPageItem) -> Unit,
+    onRequestThumbnail: (String) -> Unit,
     onOpenReorderDialog: (PdfPageItem) -> Unit,
     onNavigateToSecurity: () -> Unit,
     onNavigateToBatch: () -> Unit,
@@ -228,6 +229,7 @@ fun PagesGridTab(
                 onResetRotation = { onResetPageRotation(page.id) },
                 onDelete = { onDeletePage(page.id) },
                 onPreview = { onPreviewPage(page) },
+                onRequestThumbnail = { onRequestThumbnail(page.id) },
                 onOpenReorderDialog = { onOpenReorderDialog(page) },
                 onDragReorder = { deltaY, deltaX ->
                     val columns = 2 // standard phone layout
