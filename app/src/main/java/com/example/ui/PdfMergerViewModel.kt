@@ -607,6 +607,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun clearAllSessionData(notice: String) {
+        mergeJob?.cancel(CancellationException("Session cleared"))
         thumbnailJobs.values.forEach { it.cancel() }
         thumbnailJobs.clear()
         val context = getApplication<Application>()
@@ -758,12 +759,14 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             } catch (e: CancellationException) {
                 pendingOutput?.delete()
-                _uiState.update {
-                    it.copy(
-                        mergeState = MergeState.Idle,
-                        triggerSaveDialog = false,
-                        userNotice = "Merge cancelled."
-                    )
+                if (e.message != "Session cleared") {
+                    _uiState.update {
+                        it.copy(
+                            mergeState = MergeState.Idle,
+                            triggerSaveDialog = false,
+                            userNotice = "Merge cancelled."
+                        )
+                    }
                 }
                 throw e
             } finally {
