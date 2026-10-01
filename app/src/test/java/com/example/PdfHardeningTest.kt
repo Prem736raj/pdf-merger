@@ -10,12 +10,16 @@ import com.example.util.FileUtil
 import com.example.util.PdfCompatibilityModeRequiredException
 import com.example.util.PdfInvalidDocumentException
 import com.example.util.PdfMergerEngine
+import com.example.util.PdfPasswordRequiredException
+import com.example.util.PdfWrongPasswordException
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
 import com.tom_roush.pdfbox.pdmodel.PDResources
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
@@ -124,6 +128,46 @@ class PdfHardeningTest {
         val qpdfFixture = File(fixtureDir, "protected-aes128.pdf")
         output.file.copyTo(qpdfFixture, overwrite = true)
         assertTrue(qpdfFixture.exists() && qpdfFixture.length() > 0L)
+    }
+
+    @Test
+    fun encryptedInputRequiresCorrectPasswordAndUnlocksToPlainWorkingCopy() = runBlocking {
+        val userPassword = "Input-Open-42"
+        val ownerPassword = "Input-Owner-99"
+        val encrypted = createEncryptedTextPdf(
+            name = "encrypted-input.pdf",
+            marker = "ENCRYPTED_INPUT_MARKER_314159",
+            userPassword = userPassword,
+            ownerPassword = ownerPassword
+        )
+
+        assertThrows(PdfPasswordRequiredException::class.java) {
+            FileUtil.getPdfPageCount(encrypted)
+        }
+        assertThrows(PdfWrongPasswordException::class.java) {
+            FileUtil.getPdfPageCount(encrypted, "wrong-password")
+        }
+
+        val unlocked = File(root, "unlocked-working-copy.pdf")
+        assertTrue(PdfMergerEngine.decryptAndSanitizePdf(encrypted, userPassword, unlocked))
+        PDDocument.load(unlocked).use { document ->
+            assertFalse(document.isEncrypted)
+            assertEquals(1, document.numberOfPages)
+        }
+
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("unlocked", "Unlocked", 0)),
+            sourceFilesMap = mapOf("unlocked" to unlocked),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "unlocked-merge",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        assertEquals(
+            "ENCRYPTED_INPUT_MARKER_314159",
+            extractPageTexts(output.file).single().trim()
+        )
     }
 
     @Test
@@ -328,6 +372,28 @@ class PdfHardeningTest {
             rotationDegrees = rotation,
             accentColor = Color.Black
         )
+
+    private fun createEncryptedTextPdf(
+        name: String,
+        marker: String,
+        userPassword: String,
+        ownerPassword: String
+    ): File {
+        val file = createTextPdf(name, listOf(marker))
+        PDDocument.load(file).use { document ->
+            val policy = StandardProtectionPolicy(
+                ownerPassword,
+                userPassword,
+                AccessPermission()
+            ).apply {
+                encryptionKeyLength = 128
+                isPreferAES = true
+            }
+            document.protect(policy)
+            document.save(file)
+        }
+        return file
+    }
 
     private fun createInteractiveFormPdf(name: String): File {
         val file = File(root, name)
