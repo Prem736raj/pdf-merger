@@ -90,5 +90,8 @@ jobs:
       - name: Lint
         run: ./gradlew lintDebug --stacktrace
 
+      - name: Lint release
+        run: ./gradlew lintRelease --stacktrace
+
       - name: Assemble debug
         run: ./gradlew assembleDebug --stacktrace
