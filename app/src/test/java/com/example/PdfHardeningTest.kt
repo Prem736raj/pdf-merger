@@ -379,8 +379,9 @@ class PdfHardeningTest {
         userPassword: String,
         ownerPassword: String
     ): File {
-        val file = createTextPdf(name, listOf(marker))
-        PDDocument.load(file).use { document ->
+        val plain = createTextPdf("plain_$name", listOf(marker))
+        val encrypted = File(root, name)
+        PDDocument.load(plain).use { document ->
             val policy = StandardProtectionPolicy(
                 ownerPassword,
                 userPassword,
@@ -390,9 +391,10 @@ class PdfHardeningTest {
                 isPreferAES = true
             }
             document.protect(policy)
-            document.save(file)
+            document.save(encrypted)
         }
-        return file
+        plain.delete()
+        return encrypted
     }
 
     private fun createInteractiveFormPdf(name: String): File {
