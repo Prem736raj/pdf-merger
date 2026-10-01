@@ -59,6 +59,20 @@ jobs:
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
+      - name: Verify protected PDF independently with qpdf
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y qpdf
+          fixture="$(find . -path '*/build/qpdf-fixtures/protected-aes128.pdf' -print -quit)"
+          test -n "$fixture"
+          qpdf --check --password='Open-Password-42' "$fixture"
+          qpdf --show-encryption --password='Open-Password-42' "$fixture" | tee qpdf-encryption.txt
+          grep -Eq 'R = 4|R=4' qpdf-encryption.txt
+          grep -Eq 'V = 4|V=4' qpdf-encryption.txt
+          grep -Eq 'AESv2|AES-128' qpdf-encryption.txt
+
       - name: Lint
         run: ./gradlew lintDebug --stacktrace
 
