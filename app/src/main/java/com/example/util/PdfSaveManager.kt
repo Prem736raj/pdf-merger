@@ -150,6 +150,7 @@ object PdfSaveManager {
         }
     }
 
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
     private fun saveToMediaStoreDownloads(context: Context, source: File, fileName: String): SaveResult {
         var targetUri: Uri? = null
         return try {
