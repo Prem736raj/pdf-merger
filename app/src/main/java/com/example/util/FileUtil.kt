@@ -117,6 +117,10 @@ object FileUtil {
         return removed
     }
 
+    fun clearPrivateMergedOutputs(context: Context): Int {
+        return deleteOwnedTree(context.filesDir, File(context.filesDir, "merged_pdfs"))
+    }
+
     private fun recursiveSize(file: File): Long {
         if (!file.exists()) return 0L
         if (file.isFile) return file.length()
