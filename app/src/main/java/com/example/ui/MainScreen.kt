@@ -168,9 +168,21 @@ fun MainScreen(
     ) { treeUri ->
         if (treeUri != null) {
             val folderName = treeUri.lastPathSegment?.substringAfterLast(':') ?: "Chosen Folder"
-            com.example.util.PdfSaveManager.setCustomFolder(context, treeUri, folderName)
-            viewModel.refreshSaveDestination()
-            Toast.makeText(context, "Default save folder set to: $folderName", Toast.LENGTH_SHORT).show()
+            val persisted = com.example.util.PdfSaveManager.setCustomFolder(context, treeUri, folderName)
+            if (persisted) {
+                viewModel.refreshSaveDestination()
+                Toast.makeText(
+                    context,
+                    "Default save folder set to: $folderName",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    context,
+                    "Folder access could not be retained. Choose another folder or use Save As.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 

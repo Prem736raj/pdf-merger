@@ -56,21 +56,22 @@ object PdfSaveManager {
         }
     }
 
-    fun setCustomFolder(context: Context, treeUri: Uri, folderName: String?) {
+    fun setCustomFolder(context: Context, treeUri: Uri, folderName: String?): Boolean {
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
+        return try {
             context.contentResolver.takePersistableUriPermission(treeUri, flags)
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(KEY_SAVE_MODE, MODE_CUSTOM_FOLDER)
+                .putString(KEY_CUSTOM_TREE_URI, treeUri.toString())
+                .putString(KEY_CUSTOM_FOLDER_NAME, folderName ?: "Selected Folder")
+                .putBoolean(KEY_AUTO_SAVE_ENABLED, true)
+                .apply()
+            true
         } catch (e: Exception) {
             Log.w(TAG, "Could not persist custom-folder permission: ${e.message}")
+            false
         }
-
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putString(KEY_SAVE_MODE, MODE_CUSTOM_FOLDER)
-            .putString(KEY_CUSTOM_TREE_URI, treeUri.toString())
-            .putString(KEY_CUSTOM_FOLDER_NAME, folderName ?: "Selected Folder")
-            .putBoolean(KEY_AUTO_SAVE_ENABLED, true)
-            .apply()
     }
 
     fun resetToDefaultDownloads(context: Context) {
@@ -143,12 +144,13 @@ object PdfSaveManager {
                 fileName = exportFileName(sourcePdfFile.name)
             )
         } catch (e: CancellationException) {
-            runCatching { context.contentResolver.delete(destinationUri, null, null) }
             throw e
         } catch (e: Exception) {
-            runCatching { context.contentResolver.delete(destinationUri, null, null) }
             Log.e(TAG, "Save As write failed", e)
-            SaveResult.Failure("Could not write the PDF to the selected location.")
+            SaveResult.Failure(
+                "Could not complete the PDF write to the selected location. " +
+                    "The app did not delete that destination because it may have existed before this save."
+            )
         }
     }
 
