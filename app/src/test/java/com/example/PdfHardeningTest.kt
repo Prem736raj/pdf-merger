@@ -2,6 +2,7 @@ package com.example
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
@@ -277,6 +278,21 @@ class PdfHardeningTest {
 
         assertFalse(session.exists())
         assertTrue(unrelated.exists())
+    }
+
+    @Test
+    fun fileProviderOnlyExposesMergedOutputDirectory() {
+        val allowedDir = File(context.filesDir, "merged_pdfs").apply { mkdirs() }
+        val allowed = File(allowedDir, "shareable.pdf").apply { writeText("%PDF-1.4\n%%EOF") }
+        val authority = "${context.packageName}.fileprovider"
+
+        val uri = FileProvider.getUriForFile(context, authority, allowed)
+        assertEquals("content", uri.scheme)
+
+        val unrelated = File(context.filesDir, "private-secret.txt").apply { writeText("private") }
+        assertThrows(IllegalArgumentException::class.java) {
+            FileProvider.getUriForFile(context, authority, unrelated)
+        }
     }
 
     @Test
