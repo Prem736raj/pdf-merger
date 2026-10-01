@@ -89,3 +89,10 @@ jobs:
 
       - name: Assemble debug
         run: ./gradlew assembleDebug --stacktrace
+
+      - name: Assemble unsigned release for packaging verification
+        run: ./gradlew assembleRelease -x validateReleaseSigning --stacktrace
+
+      - name: Bundle unsigned release for packaging verification
+        run: ./gradlew bundleRelease -x validateReleaseSigning --stacktrace
+
