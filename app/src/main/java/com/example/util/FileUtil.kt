@@ -129,10 +129,11 @@ object FileUtil {
 
     private fun deleteOwnedTree(cacheDir: File, target: File): Int {
         if (!target.exists()) return 0
-        val cachePath = cacheDir.canonicalFile.toPath()
-        val targetPath = target.canonicalFile.toPath()
-        if (!targetPath.startsWith(cachePath) || targetPath == cachePath) {
-            throw SecurityException("Refusing to delete outside app-owned cache.")
+        val root = cacheDir.canonicalFile
+        val candidate = target.canonicalFile
+        val rootPrefix = root.path + File.separator
+        if (candidate == root || !candidate.path.startsWith(rootPrefix)) {
+            throw SecurityException("Refusing to delete outside app-owned storage.")
         }
         val count = target.walkBottomUp().count { it.exists() }
         if (!target.deleteRecursively()) throw IOException("Could not fully remove temporary PDF files.")
