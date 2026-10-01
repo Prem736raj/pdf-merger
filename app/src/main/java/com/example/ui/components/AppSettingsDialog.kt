@@ -470,13 +470,13 @@ fun AppSettingsDialog(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "100% Private & Offline",
+                                        text = "Private, local processing",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
                                     )
                                     Text(
-                                        text = "Your documents never leave your phone.",
+                                        text = "PDF processing stays on-device; files leave app-private storage only when you save or share them.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
                                     )
@@ -550,7 +550,7 @@ fun AppSettingsDialog(
                                         type = "text/plain"
                                         putExtra(
                                             Intent.EXTRA_TEXT,
-                                            "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                                            "Check out PDF Merger: local on-device PDF merging with page controls and optional password protection for Android!"
                                         )
                                     }
                                     context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))

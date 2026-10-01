@@ -727,7 +727,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = "Version 1.0.0 • 100% Offline & Private",
+                    text = "Version 1.0.0 • Local PDF processing",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -792,13 +792,13 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "100% Private & Offline",
+                                        text = "Private, local processing",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
                                     )
                                     Text(
-                                        text = "Your files never leave your device.",
+                                        text = "PDF processing stays on-device; files leave app-private storage only when you save or share them.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
                                     )
@@ -813,23 +813,23 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Data Collection",
-                            description = "We don't collect, track, or share your documents, passwords, or personal details."
+                            title = "No Built-in Data Collection",
+                            description = "The app has no analytics or cloud-upload dependency in its current build."
                         )
 
                         SimplePrivacyItem(
-                            title = "100% Offline Processing",
-                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
+                            title = "Local PDF Processing",
+                            description = "Merging, page rotation, previews, and PDF protection run locally without Android INTERNET permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Storage Risk",
-                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
+                            title = "Scoped File Access",
+                            description = "The app works with PDFs you explicitly open or share through Android document and intent APIs, without broad storage permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Instant Cleanup",
-                            description = "Temporary cache files created during assembly are deleted immediately."
+                            title = "Controlled Cleanup",
+                            description = "Remove Document, Clear All, and Clear Cache delete app-owned working copies for the active session; exported PDFs are left untouched."
                         )
                     }
                     1 -> {
@@ -844,7 +844,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                             text = "1. Batch Import: Select multiple PDF files at once, or use 'Open with / Share' from any Android file manager or messaging app.\n\n" +
                                     "2. Page Drag & Drop: Drag page sequence badges (#1, #2...) or long-press cards to visually organize the final document sequence.\n\n" +
                                     "3. Per-Page Rotation: Rotate individual pages 90° clockwise or counter-clockwise.\n\n" +
-                                    "4. PDF Security: Encrypt merged outputs with AES 128-bit encryption, set user & owner passwords, and restrict printing or copying.\n\n" +
+                                    "4. PDF Security: Apply password protection and PDF permission restrictions, then verify the saved protection state before success.\n\n" +
                                     "5. Direct Downloads: Automatically save directly to your Downloads/PDF_Merger folder or choose a custom folder.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -886,7 +886,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                                "Check out PDF Merger: local on-device PDF merging with page controls and optional password protection for Android!"
                             )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))
