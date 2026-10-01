@@ -6,17 +6,21 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.example.util.FileUtil
+import com.example.util.PdfCompatibilityModeRequiredException
 import com.example.util.PdfInvalidDocumentException
 import com.example.util.PdfMergerEngine
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.PDResources
 import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
 import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationText
+import com.tom_roush.pdfbox.pdmodel.interactive.form.PDAcroForm
+import com.tom_roush.pdfbox.pdmodel.interactive.form.PDTextField
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -224,6 +228,23 @@ class PdfHardeningTest {
     }
 
     @Test
+    fun interactiveFormInputFailsInsteadOfSilentlyDetachingFields() = runBlocking {
+        val source = createInteractiveFormPdf("interactive-form.pdf")
+        val result = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("form", "Interactive form", 0)),
+            sourceFilesMap = mapOf("form" to source),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "form-output",
+            onProgress = { _, _ -> }
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is PdfCompatibilityModeRequiredException)
+        assertTrue(result.exceptionOrNull()?.message?.contains("interactive form", ignoreCase = true) == true)
+    }
+
+    @Test
     fun unreadablePdfDoesNotBecomeFakeOnePageDocument() {
         val malformed = File(root, "malformed.pdf").apply { writeText("%PDF-1.7\ntruncated") }
         assertThrows(PdfInvalidDocumentException::class.java) {
@@ -291,6 +312,35 @@ class PdfHardeningTest {
             rotationDegrees = rotation,
             accentColor = Color.Black
         )
+
+    private fun createInteractiveFormPdf(name: String): File {
+        val file = File(root, name)
+        PDDocument().use { document ->
+            val page = PDPage(PDRectangle.LETTER)
+            document.addPage(page)
+
+            val acroForm = PDAcroForm(document)
+            document.documentCatalog.setAcroForm(acroForm)
+            val resources = PDResources()
+            resources.put(com.tom_roush.pdfbox.cos.COSName.getPDFName("Helv"), PDType1Font.HELVETICA)
+            acroForm.setDefaultResources(resources)
+            acroForm.setDefaultAppearance("/Helv 12 Tf 0 g")
+
+            val field = PDTextField(acroForm)
+            field.setPartialName("Name")
+            field.setDefaultAppearance("/Helv 12 Tf 0 g")
+            acroForm.fields.add(field)
+
+            val widget = field.widgets.first()
+            widget.setRectangle(PDRectangle(72f, 700f, 220f, 28f))
+            widget.setPage(page)
+            page.annotations.add(widget)
+            field.setValue("Form Value")
+
+            document.save(file)
+        }
+        return file
+    }
 
     private fun createAnnotatedPdf(name: String): File {
         val file = File(root, name)

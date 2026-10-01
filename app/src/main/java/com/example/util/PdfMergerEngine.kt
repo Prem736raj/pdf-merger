@@ -151,7 +151,9 @@ object PdfMergerEngine {
                 if (!file.exists()) {
                     throw PdfMergeConsistencyException("Source file no longer exists: ${file.name}")
                 }
-                openedSourceDocs[documentId] = loadDocumentSafely(file, passwordsMap[documentId])
+                val sourceDocument = loadDocumentSafely(file, passwordsMap[documentId])
+                validateSourceFidelity(sourceDocument, file.name)
+                openedSourceDocs[documentId] = sourceDocument
             }
 
             mergedDoc = PDDocument()
@@ -228,6 +230,9 @@ object PdfMergerEngine {
             outputFile.delete()
             Result.failure(e)
         } catch (e: PdfSecurityException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfCompatibilityModeRequiredException) {
             outputFile.delete()
             Result.failure(e)
         } catch (e: Exception) {
@@ -355,6 +360,16 @@ object PdfMergerEngine {
             restrictedCopying = restrictedCopying,
             restrictedAnnotations = restrictedAnnotations
         )
+    }
+
+    private fun validateSourceFidelity(document: PDDocument, displayName: String) {
+        val acroForm = document.documentCatalog.acroForm
+        if (acroForm != null && (acroForm.hasXFA() || acroForm.fields.isNotEmpty())) {
+            throw PdfCompatibilityModeRequiredException(
+                "The PDF '$displayName' contains interactive form/signature structure. " +
+                    "This page-level merge path refuses to detach or invalidate document-level fields silently."
+            )
+        }
     }
 
     private fun validateSecurityRequest(config: PdfSecurityConfig) {
