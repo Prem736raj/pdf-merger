@@ -1,129 +1,115 @@
 # PDF Merger
 
-A native Android app for combining multiple PDF files into a single document with page-level control, visual previews, and optional output protection.
+PDF Merger is a native Android utility for combining PDF pages, reordering and rotating pages, previewing documents, and optionally applying password protection to the generated PDF.
 
-Built with **Kotlin**, **Jetpack Compose**, and **PDFBox for Android**.
+The production-hardening branch prioritizes PDF correctness, local processing, storage safety, and truthful security state over cosmetic changes.
 
-## Features
-
-- Merge multiple PDF documents into one file
-- Preview PDF pages with generated thumbnails
-- Reorder pages before merging
-- Rotate individual pages while preserving orientation in the output
-- Open or share one or multiple PDFs directly into the app
-- Handle password-protected PDF files
-- Protect merged PDFs with user and owner passwords
-- Restrict printing, editing, copying, and annotations
-- AES 128-bit output encryption
-- Choose the output file name and save destination
-- Batch-oriented PDF workflow with merge progress and success feedback
-- Material 3 UI built with Jetpack Compose
-- Light/dark theme support
-
-## Tech Stack
-
-| Area | Technology |
-| --- | --- |
-| Language | Kotlin |
-| UI | Jetpack Compose + Material 3 |
-| PDF processing | PDFBox Android |
-| Architecture | ViewModel + Compose state |
-| Local data | Room |
-| Networking | Retrofit + OkHttp |
-| Async work | Kotlin Coroutines |
-| Build system | Gradle Kotlin DSL |
-| Minimum Android | API 24 (Android 7.0) |
-| Target SDK | API 36 |
-
-## Project Structure
+## Architecture
 
 ```text
-pdf-merger/
-├── app/
-│   ├── src/main/
-│   │   ├── java/com/example/
-│   │   │   ├── model/       # PDF document, page, merge and security models
-│   │   │   ├── ui/          # Compose screens, components and ViewModel
-│   │   │   └── util/        # PDF merge, thumbnail, file and save helpers
-│   │   ├── res/              # Android resources
-│   │   └── AndroidManifest.xml
-│   └── build.gradle.kts
-├── gradle/
-├── build.gradle.kts
-├── settings.gradle.kts
-└── metadata.json
+MainActivity
+  -> PdfMergerViewModel
+     -> FileUtil / PdfThumbnailHelper
+     -> PdfMergerEngine (PDFBox vector page import)
+     -> PdfSaveManager (MediaStore / Storage Access Framework)
 ```
 
-## Getting Started
+Imported working copies and thumbnails are stored only in app-owned cache directories scoped by document ID. Generated PDFs are created under the app-private `filesDir/merged_pdfs` directory until the user saves, opens, shares, or clears the session.
 
-### Prerequisites
+## Current behavior
 
-- Android Studio with support for the project's Android Gradle Plugin
-- JDK 11 or newer
-- Android SDK 36 installed
+- Multi-PDF import from the system picker and incoming PDF intents
+- Page preview, reorder, duplicate, delete, reverse, and rotation controls
+- PDFBox-first vector page merge
+- Post-save validation of page count and encryption state
+- Optional user/owner passwords and PDF permission flags
+- MediaStore save to `Downloads/PDF_Merger` on Android 10+
+- SAF custom-folder and Save As flows
+- SAF picker fallback on Android 7-9 instead of broad storage permissions
+- FileProvider sharing limited to app-private merged PDFs
+- Light, dark, and system theme modes
 
-### Clone the repository
+## Security and privacy model
+
+PDF processing is local to the app. The manifest does not request the `INTERNET` permission, and the project has no Firebase, Retrofit, OkHttp, Room, Gemini, or other cloud-processing stack.
+
+When output protection is requested, the merge is treated as failed unless the saved PDF can be reopened and its encrypted state and requested permission flags can be verified. The UI reports verified output state rather than the state of the security toggle.
+
+The app configures PDFBox `StandardProtectionPolicy` with a 128-bit key length. This repository intentionally does **not** label that output “AES-128” until the generated encryption dictionary is independently verified on device/tooling. PDF permission flags are advisory and depend on the PDF reader enforcing them.
+
+Imported working files, unlocked working copies, thumbnails, output passwords, and app-private merged output are cleared by Clear All / Clear Cache. App-private merged PDFs are excluded from Android cloud backup and device-transfer backup rules. Files explicitly exported or shared by the user are outside the app’s private-storage lifecycle.
+
+## Fidelity policy
+
+The normal merge path imports PDF pages with PDFBox and is intended to preserve PDF structure rather than rasterize pages.
+
+Automatic PdfRenderer/Bitmap fallback is disabled on the hardening branch because rasterization can destroy searchable text, vectors, links, annotations, forms, accessibility information, and signatures. A compatibility/raster mode should only be reintroduced as an explicit user-visible mode after dedicated regression testing.
+
+Not yet claimed as preserved without further fixture/device verification:
+
+- AcroForms
+- document outlines/bookmarks
+- digital signatures
+- all annotation subtypes
+- tagged-PDF accessibility structure
+- every encrypted or malformed third-party PDF variant
+
+## Build
+
+Requirements:
+
+- JDK 17
+- Android SDK / compile SDK 36.1
+- Android device or emulator API 24+
+
+From a clean clone:
 
 ```bash
-git clone https://github.com/Prem736raj/pdf-merger.git
-cd pdf-merger
+./gradlew clean
+./gradlew testDebugUnitTest
+./gradlew lintDebug
+./gradlew assembleDebug
 ```
 
-### Open and run
+CI runs the debug unit-test, lint, and assemble gates on pushes and pull requests.
 
-1. Open the repository in Android Studio.
-2. Allow Gradle to sync and download the required dependencies.
-3. Select an emulator or Android device running API 24 or newer.
-4. Run the `app` configuration.
+Release signing is deliberately not committed. Signed release artifacts require:
 
-The project includes an `.env.example` file for optional environment configuration. Keep real API keys and credentials out of version control.
+- `KEYSTORE_PATH`
+- `STORE_PASSWORD`
+- `KEY_PASSWORD`
 
-## How It Works
+The configured release key alias is `upload`.
 
-1. Add PDF files from device storage or share PDFs to the app from another Android app.
-2. Review the imported documents and page thumbnails.
-3. Reorder or rotate pages as needed.
-4. Configure the output filename and optional PDF security settings.
-5. Merge the selected pages.
-6. Save, open, or share the generated PDF.
+## Tests
 
-## PDF Security
+The hardening test suite covers:
 
-The app can create a protected output PDF with:
+- exact page order
+- searchable text survival on the vector path
+- protected-output reopen/verification
+- wrong-password rejection
+- rejection of malformed PDF page counts
+- failure on invalid requested page indexes
+- scoped recursive session cleanup
 
-- User and owner passwords
-- Printing restrictions
-- Modification restrictions
-- Text-copy restrictions
-- Annotation restrictions
-- 128-bit encryption
+Additional device-level coverage is still required for storage providers, Android 24/28/29/33+, large documents, forms, annotations, links, rotations across mixed page boxes, and independent encryption-dictionary verification.
 
-Password-protected source PDFs can also be unlocked for processing when the correct password is supplied.
+## Release limitations
 
-## Development
+The following are release-verification items, not marketing claims:
 
-The main PDF pipeline is implemented in:
+- Exact output cipher / crypt-filter identity still requires independent inspection (for example with qpdf or equivalent tooling).
+- Large-document performance at 500-1,000 pages has not yet been benchmarked on representative devices.
+- R8/minification remains disabled until PDFBox/crypto regression coverage passes on release builds.
+- The production application ID must not be changed until Play Console ownership/history is checked.
+- PDF permission restrictions cannot guarantee that every third-party reader will enforce them.
 
-- `PdfMergerEngine.kt` — merging, page transforms, decryption and output security
-- `PdfThumbnailHelper.kt` — page preview generation
-- `PdfSaveManager.kt` — output storage and save-location handling
-- `PdfMergerViewModel.kt` — UI state and merge orchestration
+## Key source files
 
-## Testing
-
-The repository includes local and instrumented Android test sources under:
-
-```text
-app/src/test/
-app/src/androidTest/
-```
-
-Run them from Android Studio using the standard test actions for the `app` module.
-
-## Contributing
-
-Contributions are welcome. Fork the repository, create a focused branch, make your changes, and open a pull request with a clear description of the behavior you changed.
-
-## Repository
-
-[github.com/Prem736raj/pdf-merger](https://github.com/Prem736raj/pdf-merger)
+- `PdfMergerEngine.kt` — vector merge, password handling, output protection, verification
+- `FileUtil.kt` — URI working-copy validation and private-file lifecycle
+- `PdfThumbnailHelper.kt` — thumbnails and preview bitmap cache
+- `PdfSaveManager.kt` — MediaStore / SAF export
+- `PdfMergerViewModel.kt` — UI state and orchestration
+- `AUDIT_FINDINGS.md` — production-hardening evidence ledger
