@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,12 +35,16 @@ import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.StarOutline
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -82,7 +88,7 @@ fun AppSettingsDialog(
 ) {
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(0) }
-    val tabs = listOf("Preferences", "Privacy & Legal")
+    val tabs = listOf("Preferences", "Privacy Policy")
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -103,37 +109,22 @@ fun AppSettingsDialog(
                     RoundedCornerShape(24.dp)
                 )
         ) {
-            Box(modifier = Modifier.fillMaxWidth()) {
-                // Top-Right Close Button
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 16.dp, end = 16.dp)
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .clickable { onDismiss() }
-                        .testTag("close_settings_button"),
-                    contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 22.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header with Title & Interactive Cross Button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 22.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Header
                     Row(
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
                     ) {
                         Box(
                             modifier = Modifier
@@ -166,6 +157,30 @@ fun AppSettingsDialog(
                             )
                         }
                     }
+
+                    // Interactive Cross (Close) Button
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .testTag("close_settings_button")
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Settings",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
 
                     // Navigation Tabs
                     TabRow(
@@ -414,94 +429,145 @@ fun AppSettingsDialog(
                                 .testTag("settings_output_name_field")
                         )
 
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+
+                        // 4. Rate & Feedback
+                        SettingsSectionTitle(
+                            icon = Icons.Default.Star,
+                            title = "Rate & Support"
+                        )
+
+                        RateAppCard(context = context)
+
                     } else {
-                        // Privacy Policy & Google Play Legal Details
+                        // Simple, User-Friendly Privacy Policy
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = Color(0xFF10B981).copy(alpha = 0.12f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "100% On-Device Privacy: No files leave your device. All merging, rotation, and encryption happen strictly offline.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF065F46)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981).copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "100% Private & Offline",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
+                                    )
+                                    Text(
+                                        text = "Your documents never leave your phone.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
+                                    )
+                                }
                             }
                         }
 
                         Text(
-                            text = "Privacy Declaration (Google Play Compliant):",
+                            text = "Privacy Highlights",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
+                            style = MaterialTheme.typography.titleSmall
                         )
 
-                        Text(
-                            text = "• Zero Data Collection: PDF Merger does not collect, record, track, or transmit any document contents, file metadata, passwords, or device telemetry.\n\n" +
-                                    "• Offline Processing: Document parsing, page rearrangement, thumbnail generation, and AES-128 cryptographic operations execute locally on your device's CPU/memory.\n\n" +
-                                    "• Zero Dangerous Permissions: Compliant with Google Play's strictest Storage and Privacy Policies. The app uses Android's native Storage Access Framework (SAF) and Scoped Storage—no READ_EXTERNAL_STORAGE or MANAGE_EXTERNAL_STORAGE required.\n\n" +
-                                    "• Transient Memory: Any temporary cache files created during assembly are stored in private sandboxed app cache and cleared appropriately.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
+                        SimplePrivacyItem(
+                            title = "Zero Data Collection",
+                            description = "We don't collect, track, or share your documents, passwords, or personal details."
                         )
 
-                        HorizontalDivider()
-
-                        Text(
-                            text = "Open Source Licenses & Attribution:",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
+                        SimplePrivacyItem(
+                            title = "100% Offline Processing",
+                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
                         )
 
-                        Text(
-                            text = "• Apache PDFBox-Android:\n" +
-                                    "Licensed under the Apache License, Version 2.0. Copyright © The Apache Software Foundation & Tom Roush.\n\n" +
-                                    "• Bouncy Castle Cryptography:\n" +
-                                    "Copyright © 2000-2024 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)\n\n" +
-                                    "• Android Jetpack & Material 3:\n" +
-                                    "Copyright © Google LLC. Licensed under Apache 2.0.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
+                        SimplePrivacyItem(
+                            title = "Zero Storage Risk",
+                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
                         )
 
-                        HorizontalDivider()
+                        SimplePrivacyItem(
+                            title = "Instant Cleanup",
+                            description = "Temporary cache files created during assembly are deleted immediately."
+                        )
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         Text(
-                            text = "Version 1.0.0 • Package: com.aistudio.pdfmerger.vqznrk\nTarget SDK: 36 (Android 15 Ready)",
+                            text = "Version 1.0.0 • 100% Offline & Secure",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
 
-                        OutlinedButton(
-                            onClick = {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(
-                                        Intent.EXTRA_TEXT,
-                                        "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
-                                    )
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share PDF Merger App")
+                            Button(
+                                onClick = { launchPlayStoreRating(context) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("rate_app_privacy_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Rate App",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(
+                                            Intent.EXTRA_TEXT,
+                                            "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                                        )
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))
+                                },
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .testTag("share_app_privacy_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Share App")
+                            }
                         }
                     }
 
@@ -515,7 +581,6 @@ fun AppSettingsDialog(
                         Text("Done")
                     }
                 }
-            }
         }
     }
 }
@@ -597,3 +662,182 @@ private fun ThemeModeOptionCard(
         }
     }
 }
+
+@Composable
+fun SimplePrivacyItem(
+    title: String,
+    description: String,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 5.dp)
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF10B981))
+        )
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 16.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun RateAppCard(
+    context: Context,
+    modifier: Modifier = Modifier
+) {
+    var selectedStars by remember { mutableStateOf(5) }
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFFFEF3C7).copy(alpha = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) 0.12f else 0.45f)
+        ),
+        border = BorderStroke(
+            1.dp,
+            Color(0xFFF59E0B).copy(alpha = 0.35f)
+        ),
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFFF59E0B).copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        tint = Color(0xFFF59E0B),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Rate PDF Merger",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Tap the stars to rate your experience",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Interactive 5 Stars
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                for (star in 1..5) {
+                    IconButton(
+                        onClick = {
+                            selectedStars = star
+                        },
+                        modifier = Modifier
+                            .size(38.dp)
+                            .testTag("rate_star_$star")
+                    ) {
+                        Icon(
+                            imageVector = if (star <= selectedStars) Icons.Default.Star else Icons.Default.StarOutline,
+                            contentDescription = "Rate $star stars",
+                            tint = if (star <= selectedStars) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = if (selectedStars >= 4) {
+                    "“Love it! Help us grow by rating 5 stars on Play Store.”"
+                } else {
+                    "“Thanks for the feedback! We are constantly improving.”"
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(horizontal = 8.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    launchPlayStoreRating(context)
+                },
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("rate_on_google_play_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Rate on Google Play",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+fun launchPlayStoreRating(context: Context) {
+    val packageName = context.packageName
+    val playStoreUri = Uri.parse("market://details?id=$packageName")
+    val intent = Intent(Intent.ACTION_VIEW, playStoreUri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_NEW_DOCUMENT or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        val webUri = Uri.parse("https://play.google.com/store/apps/details?id=$packageName")
+        context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+    }
+}
+
+

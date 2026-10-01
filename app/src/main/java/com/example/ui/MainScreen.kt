@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
@@ -82,6 +83,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -95,7 +97,9 @@ import com.example.ui.components.FullscreenPreviewDialog
 import com.example.ui.components.MergeProgressDialog
 import com.example.ui.components.MergeSuccessDialog
 import com.example.ui.components.ReorderPageDialog
+import com.example.ui.components.SimplePrivacyItem
 import com.example.ui.components.UnlockPasswordDialog
+import com.example.ui.components.launchPlayStoreRating
 import com.example.ui.screens.BatchDocumentsTab
 import com.example.ui.screens.PagesGridTab
 import com.example.ui.screens.SecurityTab
@@ -488,7 +492,6 @@ fun MainScreen(
                         documents = uiState.documents,
                         totalPages = uiState.pages.size,
                         onAddUris = { uris -> viewModel.addDocumentsFromUris(uris) },
-                        onLoadSamplePdfs = { viewModel.loadSampleDocuments() },
                         onMoveDocumentUp = { index -> viewModel.reorderDocument(index, index - 1) },
                         onMoveDocumentDown = { index -> viewModel.reorderDocument(index, index + 1) },
                         onRemoveDocument = { docId -> viewModel.removeDocument(docId) },
@@ -521,15 +524,6 @@ fun MainScreen(
                         onOutputFileNameChange = { viewModel.updateOutputFileName(it) },
                         securityConfig = uiState.securityConfig,
                         onSecurityConfigChange = { viewModel.updateSecurityConfig(it) },
-                        saveDestinationDisplayName = uiState.saveDestinationDisplayName,
-                        isAutoSaveDirectly = uiState.isAutoSaveDirectly,
-                        onPickCustomFolder = { folderPickerLauncher.launch(null) },
-                        onResetToDefaultDownloads = {
-                            com.example.util.PdfSaveManager.resetToDefaultDownloads(context)
-                            viewModel.refreshSaveDestination()
-                            Toast.makeText(context, "Reset to standard Downloads folder", Toast.LENGTH_SHORT).show()
-                        },
-                        onToggleAutoSave = { viewModel.setAutoSaveDirectly(it) },
                         documents = uiState.documents,
                         pages = uiState.pages,
                         lastMergedFile = uiState.lastMergedFile,
@@ -690,7 +684,7 @@ fun MainScreen(
 fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     var selectedSection by remember { mutableStateOf(0) }
-    val sections = listOf("Privacy Policy", "Features", "Legal & Licenses")
+    val sections = listOf("Privacy Policy", "Features")
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -718,7 +712,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = "Version 1.0.0 • Google Play Ready",
+                    text = "Version 1.0.0 • 100% Offline & Private",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -756,46 +750,71 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
 
                 when (selectedSection) {
                     0 -> {
-                        // Privacy Policy (Google Play Policy Compliant)
+                        // Simple Privacy Policy
                         Surface(
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(14.dp),
                             color = Color(0xFF10B981).copy(alpha = 0.12f),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Row(
-                                modifier = Modifier.padding(12.dp),
+                                modifier = Modifier.padding(14.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = Color(0xFF10B981),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Text(
-                                    text = "100% On-Device Privacy Guarantee: No files leave your device. All merging, rotation, and encryption happen strictly offline.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color(0xFF065F46)
-                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF10B981).copy(alpha = 0.2f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column {
+                                    Text(
+                                        text = "100% Private & Offline",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
+                                    )
+                                    Text(
+                                        text = "Your files never leave your device.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
+                                    )
+                                }
                             }
                         }
 
                         Text(
-                            text = "Privacy Declaration (Google Play Compliant):",
+                            text = "Privacy Highlights",
                             fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
+                            style = MaterialTheme.typography.titleSmall
                         )
 
-                        Text(
-                            text = "• Zero Data Collection: PDF Merger does not collect, record, track, or transmit any document contents, file metadata, passwords, or device telemetry.\n\n" +
-                                    "• Offline Processing: Document parsing, page rearrangement, thumbnail generation, and AES-128 cryptographic operations execute locally on your device's CPU/memory.\n\n" +
-                                    "• Zero Dangerous Permissions: Compliant with Google Play's strictest Storage and Privacy Policies. The app uses Android's native Storage Access Framework (SAF) and Scoped Storage—no READ_EXTERNAL_STORAGE or MANAGE_EXTERNAL_STORAGE required.\n\n" +
-                                    "• Transient Memory: Any temporary cache files created during assembly are stored in private sandboxed app cache and cleared appropriately.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
+                        SimplePrivacyItem(
+                            title = "Zero Data Collection",
+                            description = "We don't collect, track, or share your documents, passwords, or personal details."
+                        )
+
+                        SimplePrivacyItem(
+                            title = "100% Offline Processing",
+                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
+                        )
+
+                        SimplePrivacyItem(
+                            title = "Zero Storage Risk",
+                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
+                        )
+
+                        SimplePrivacyItem(
+                            title = "Instant Cleanup",
+                            description = "Temporary cache files created during assembly are deleted immediately."
                         )
                     }
                     1 -> {
@@ -817,34 +836,6 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                             lineHeight = 18.sp
                         )
                     }
-                    2 -> {
-                        // Legal & Licenses
-                        Text(
-                            text = "Open Source Licenses & Attribution:",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.labelLarge
-                        )
-
-                        Text(
-                            text = "• Apache PDFBox-Android:\n" +
-                                    "Licensed under the Apache License, Version 2.0. Copyright © The Apache Software Foundation & Tom Roush.\n\n" +
-                                    "• Bouncy Castle Cryptography:\n" +
-                                    "Copyright © 2000-2024 The Legion of the Bouncy Castle Inc. (https://www.bouncycastle.org)\n\n" +
-                                    "• Android Jetpack & Material 3:\n" +
-                                    "Copyright © Google LLC. Licensed under Apache 2.0.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            lineHeight = 18.sp
-                        )
-
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-
-                        Text(
-                            text = "Application ID: com.aistudio.pdfmerger.vqznrk\nTarget SDK: 36 (Android 15 Ready)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline
-                        )
-                    }
                 }
             }
         },
@@ -857,26 +848,45 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
             }
         },
         dismissButton = {
-            OutlinedButton(
-                onClick = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(
-                            Intent.EXTRA_TEXT,
-                            "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
-                        )
-                    }
-                    context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))
-                },
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Share App")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { launchPlayStoreRating(context) },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                    modifier = Modifier.testTag("about_rate_app_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Star,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Rate App", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                            )
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.testTag("about_share_app_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Share")
+                }
             }
         }
     )

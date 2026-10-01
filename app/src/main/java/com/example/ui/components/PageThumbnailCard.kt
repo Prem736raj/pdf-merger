@@ -52,6 +52,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -245,13 +246,14 @@ fun PageThumbnailCard(
             Spacer(modifier = Modifier.height(8.dp))
 
             // Thumbnail Preview Container
+            val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(0.72f) // Standard A4 ratio
                     .clip(RoundedCornerShape(8.dp))
-                    .background(Color(0xFFF1F5F9))
-                    .border(0.5.dp, Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
+                    .background(if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9))
+                    .border(0.5.dp, if (isDark) Color(0xFF334155) else Color(0xFFCBD5E1), RoundedCornerShape(8.dp))
                     .clickable { onPreview() },
                 contentAlignment = Alignment.Center
             ) {

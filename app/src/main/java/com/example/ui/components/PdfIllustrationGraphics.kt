@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -191,7 +192,7 @@ fun CelebratoryPdfSuccessGraphic(
             }
         }
 
-        // Vibrant Glossy Green Checkmark Badge overlapping in center/lower-right
+        // Vibrant Glossy Red PDF Emblem Badge in place of check sign
         Box(
             modifier = Modifier
                 .offset(x = 18.dp, y = 22.dp)
@@ -200,17 +201,17 @@ fun CelebratoryPdfSuccessGraphic(
                 .clip(CircleShape)
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(Color(0xFF34D399), Color(0xFF10B981), Color(0xFF059669))
+                        colors = listOf(Color(0xFFEF4444), Color(0xFFDC2626), Color(0xFF991B1B))
                     )
                 )
                 .border(3.dp, Color.White, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = "Success Check",
+                imageVector = Icons.Default.PictureAsPdf,
+                contentDescription = "PDF Success",
                 tint = Color.White,
-                modifier = Modifier.size(28.dp)
+                modifier = Modifier.size(26.dp)
             )
         }
     }
@@ -319,19 +320,19 @@ fun BatchHeroBannerGraphic(
             }
         }
 
-        // Circular Purple "+" Plus Badge in lower right
+        // Circular Glossy Purple "+" Plus Badge in lower right with clean white border
         Box(
             modifier = Modifier
                 .offset(x = 22.dp, y = 22.dp)
-                .size(28.dp)
-                .shadow(6.dp, CircleShape)
+                .size(30.dp)
+                .shadow(8.dp, CircleShape)
                 .clip(CircleShape)
                 .background(
-                    Brush.radialGradient(
-                        listOf(Color(0xFF818CF8), Color(0xFF6366F1), Color(0xFF4F46E5))
+                    Brush.linearGradient(
+                        colors = listOf(Color(0xFF818CF8), Color(0xFF6366F1), Color(0xFF4F46E5))
                     )
                 )
-                .border(2.dp, Color(0xFF1E1B4B), CircleShape),
+                .border(2.5.dp, Color.White, CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(

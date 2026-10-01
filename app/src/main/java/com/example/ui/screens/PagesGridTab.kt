@@ -129,7 +129,8 @@ fun PagesGridTab(
             Column(modifier = Modifier.fillMaxWidth()) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -147,6 +148,7 @@ fun PagesGridTab(
                             text = "Use ↺ or ↻ buttons below each thumbnail to rotate pages 90°. Long-press and drag thumbnails to reorder.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Medium,
                             fontSize = 12.sp
                         )
                     }
@@ -164,7 +166,7 @@ fun PagesGridTab(
                         text = "${pages.size} Total Pages",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onSurface
                     )
 
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

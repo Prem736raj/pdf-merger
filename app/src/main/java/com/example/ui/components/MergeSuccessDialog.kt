@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AutoAwesomeMotion
@@ -27,12 +29,11 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -45,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -54,6 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.zIndex
 import androidx.core.content.FileProvider
 import com.example.model.MergeState
 import com.example.util.FileUtil
@@ -65,6 +68,27 @@ fun MergeSuccessDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    val cardBg = if (isDark) Color(0xFF0B101D) else Color(0xFFFFFFFF)
+    val cardBorder = if (isDark) {
+        Brush.linearGradient(
+            listOf(Color(0xFF38BDF8).copy(alpha = 0.4f), Color(0xFF6366F1).copy(alpha = 0.3f), Color(0xFF8B5CF6).copy(alpha = 0.4f))
+        )
+    } else {
+        Brush.linearGradient(
+            listOf(Color(0xFF38BDF8).copy(alpha = 0.6f), Color(0xFF6366F1).copy(alpha = 0.5f))
+        )
+    }
+
+    val primaryTextColor = if (isDark) Color.White else Color(0xFF0F172A)
+    val secondaryTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+    val metadataBg = if (isDark) Color(0xFF131A2E) else Color(0xFFF8FAFC)
+    val metadataBorder = if (isDark) Color(0xFF38BDF8).copy(alpha = 0.18f) else Color(0xFFE2E8F0)
+    val securityBg = if (isDark) Color(0xFF161A36) else Color(0xFFEEF2FF)
+    val securityBorder = if (isDark) Color(0xFF6366F1).copy(alpha = 0.35f) else Color(0xFFC7D2FE)
+    val securityTitleColor = if (isDark) Color(0xFFA5B4FC) else Color(0xFF3730A3)
+    val dividerColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color(0xFFE2E8F0)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -72,51 +96,54 @@ fun MergeSuccessDialog(
     ) {
         Card(
             shape = RoundedCornerShape(26.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF0B101D) // Deep Slate / Navy background
-            ),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
             elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .testTag("merge_success_dialog")
                 .border(
                     width = 1.2.dp,
-                    brush = Brush.linearGradient(
-                        listOf(Color(0xFF38BDF8).copy(alpha = 0.4f), Color(0xFF6366F1).copy(alpha = 0.3f), Color(0xFF8B5CF6).copy(alpha = 0.4f))
-                    ),
+                    brush = cardBorder,
                     shape = RoundedCornerShape(26.dp)
                 )
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                // Top-Right Circular Close Button (X)
-                Box(
+                // Top-Right Circular Close Button (X) - 48dp touch target, high z-index
+                IconButton(
+                    onClick = onDismiss,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
-                        .padding(top = 16.dp, end = 16.dp)
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.08f))
-                        .clickable { onDismiss() }
-                        .testTag("close_success_dialog_button"),
-                    contentAlignment = Alignment.Center
+                        .padding(8.dp)
+                        .size(48.dp)
+                        .zIndex(25f)
+                        .testTag("close_success_dialog_button")
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close",
-                        tint = Color(0xFF94A3B8),
-                        modifier = Modifier.size(18.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(if (isDark) Color.White.copy(alpha = 0.12f) else Color(0xFFF1F5F9)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Dialog",
+                            tint = if (isDark) Color(0xFFE2E8F0) else Color(0xFF475569),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
 
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 22.dp, vertical = 24.dp),
+                        .padding(horizontal = 22.dp, vertical = 20.dp)
+                        .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Celebratory 3D PDF Illustration with Confetti & Green Check
+                    // Celebratory 3D PDF Illustration with PDF badge
                     CelebratoryPdfSuccessGraphic(
-                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
                     )
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -129,34 +156,31 @@ fun MergeSuccessDialog(
                             text = "PDF Merged ",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color.White
+                            color = primaryTextColor
                         )
                         Text(
                             text = "Successfully!",
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFF00E5FF)
+                            color = if (isDark) Color(0xFF00E5FF) else Color(0xFF0284C7)
                         )
                     }
 
                     Text(
                         text = "All pages combined and encrypted securely on-device.",
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF94A3B8),
+                        color = secondaryTextColor,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                    // Metadata Card matching Image 2
+                    // Metadata Card
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF131A2E),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            Color(0xFF38BDF8).copy(alpha = 0.18f)
-                        ),
+                        color = metadataBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, metadataBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -170,11 +194,13 @@ fun MergeSuccessDialog(
                                 icon = Icons.Default.Description,
                                 iconBgColor = Color(0xFF8B5CF6),
                                 label = "Output File",
-                                value = successState.outputFile.name
+                                value = successState.outputFile.name,
+                                labelColor = secondaryTextColor,
+                                valueColor = primaryTextColor
                             )
 
                             HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.06f),
+                                color = dividerColor,
                                 thickness = 0.8.dp
                             )
 
@@ -183,11 +209,13 @@ fun MergeSuccessDialog(
                                 icon = Icons.Default.AutoAwesomeMotion,
                                 iconBgColor = Color(0xFFEC4899),
                                 label = "Total Pages",
-                                value = "${successState.totalPages} pages"
+                                value = "${successState.totalPages} pages",
+                                labelColor = secondaryTextColor,
+                                valueColor = primaryTextColor
                             )
 
                             HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.06f),
+                                color = dividerColor,
                                 thickness = 0.8.dp
                             )
 
@@ -196,21 +224,20 @@ fun MergeSuccessDialog(
                                 icon = Icons.Default.Folder,
                                 iconBgColor = Color(0xFF10B981),
                                 label = "File Size",
-                                value = FileUtil.formatFileSize(successState.fileSizeBytes)
+                                value = FileUtil.formatFileSize(successState.fileSizeBytes),
+                                labelColor = secondaryTextColor,
+                                valueColor = primaryTextColor
                             )
                         }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Security Card matching Image 2
+                    // Security Card
                     Surface(
                         shape = RoundedCornerShape(16.dp),
-                        color = Color(0xFF161A36),
-                        border = androidx.compose.foundation.BorderStroke(
-                            1.dp,
-                            Color(0xFF6366F1).copy(alpha = 0.35f)
-                        ),
+                        color = securityBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, securityBorder),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
@@ -243,25 +270,25 @@ fun MergeSuccessDialog(
                                         text = if (successState.isProtected) "Security: AES 128-bit Protected" else "Security: Standard Document",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = Color(0xFFA5B4FC)
+                                        color = securityTitleColor
                                     )
                                 }
 
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
                                     contentDescription = "Verified Protection",
-                                    tint = Color(0xFF38BDF8),
+                                    tint = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
 
                             HorizontalDivider(
-                                color = Color.White.copy(alpha = 0.08f),
+                                color = dividerColor,
                                 thickness = 0.8.dp,
                                 modifier = Modifier.padding(vertical = 8.dp)
                             )
 
-                            // Restriction pills matching Image 2
+                            // Restriction pills
                             val restrictions = mutableListOf<String>()
                             if (successState.userPasswordSet) restrictions.add("User Password Set") else restrictions.add("User Password: None")
                             if (successState.ownerPasswordSet) restrictions.add("Owner Password Set")
@@ -273,13 +300,13 @@ fun MergeSuccessDialog(
                             Text(
                                 text = restrictions.joinToString(" • "),
                                 fontSize = 11.sp,
-                                color = Color(0xFF94A3B8),
+                                color = secondaryTextColor,
                                 lineHeight = 16.sp
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     // Primary Button: Glowing Blue to Purple Gradient "Save / Download to Device"
                     Box(
@@ -321,6 +348,9 @@ fun MergeSuccessDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        val secondaryBorderColor = if (isDark) Color(0xFF38BDF8).copy(alpha = 0.5f) else Color(0xFF0284C7)
+                        val secondaryBtnContentColor = if (isDark) Color.White else Color(0xFF0284C7)
+
                         OutlinedButton(
                             onClick = { openPdfInViewer(context, successState.outputFile) },
                             modifier = Modifier
@@ -329,18 +359,18 @@ fun MergeSuccessDialog(
                                 .testTag("open_merged_pdf_button"),
                             shape = RoundedCornerShape(14.dp),
                             border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                Color(0xFF38BDF8).copy(alpha = 0.4f)
+                                1.2.dp,
+                                secondaryBorderColor
                             )
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.OpenInNew,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = secondaryBtnContentColor,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Open PDF", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Open PDF", fontSize = 13.sp, color = secondaryBtnContentColor, fontWeight = FontWeight.SemiBold)
                         }
 
                         OutlinedButton(
@@ -351,18 +381,18 @@ fun MergeSuccessDialog(
                                 .testTag("share_merged_pdf_button"),
                             shape = RoundedCornerShape(14.dp),
                             border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                Color(0xFF38BDF8).copy(alpha = 0.4f)
+                                1.2.dp,
+                                secondaryBorderColor
                             )
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = secondaryBtnContentColor,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Share", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                            Text("Share", fontSize = 13.sp, color = secondaryBtnContentColor, fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -376,7 +406,8 @@ fun MergeSuccessDialog(
                         Text(
                             text = "Done / Close",
                             fontSize = 13.sp,
-                            color = Color(0xFF94A3B8)
+                            color = secondaryTextColor,
+                            fontWeight = FontWeight.Medium
                         )
                     }
                 }
@@ -390,14 +421,16 @@ private fun MetadataRowItem(
     icon: ImageVector,
     iconBgColor: Color,
     label: String,
-    value: String
+    value: String,
+    labelColor: Color = Color(0xFF94A3B8),
+    valueColor: Color = Color.White
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f, fill = false)) {
             Box(
                 modifier = Modifier
                     .size(28.dp)
@@ -416,15 +449,17 @@ private fun MetadataRowItem(
             Text(
                 text = label,
                 fontSize = 13.sp,
-                color = Color(0xFF94A3B8)
+                color = labelColor
             )
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
 
         Text(
             text = value,
             fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = valueColor,
             maxLines = 1
         )
     }

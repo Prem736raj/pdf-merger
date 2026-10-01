@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -61,7 +62,6 @@ fun BatchDocumentsTab(
     documents: List<PdfDocumentItem>,
     totalPages: Int,
     onAddUris: (List<android.net.Uri>) -> Unit,
-    onLoadSamplePdfs: () -> Unit,
     onMoveDocumentUp: (Int) -> Unit,
     onMoveDocumentDown: (Int) -> Unit,
     onRemoveDocument: (String) -> Unit,
@@ -78,6 +78,7 @@ fun BatchDocumentsTab(
     }
 
     val totalBytes = documents.sumOf { it.fileSizeBytes }
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
 
     LazyColumn(
         modifier = modifier
@@ -88,17 +89,23 @@ fun BatchDocumentsTab(
         item {
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Hero Batch Upload Card matching Image 3
+            // Hero Batch Upload Card adaptive for Light & Dark mode
             Card(
                 shape = RoundedCornerShape(22.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF161536)
+                    containerColor = if (isDark) Color(0xFF161536) else Color(0xFFEEF2FF)
                 ),
                 border = androidx.compose.foundation.BorderStroke(
                     1.dp,
-                    Brush.linearGradient(
-                        listOf(Color(0xFF6366F1).copy(alpha = 0.5f), Color(0xFF3B82F6).copy(alpha = 0.3f))
-                    )
+                    if (isDark) {
+                        Brush.linearGradient(
+                            listOf(Color(0xFF6366F1).copy(alpha = 0.5f), Color(0xFF3B82F6).copy(alpha = 0.3f))
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(Color(0xFF818CF8).copy(alpha = 0.6f), Color(0xFF6366F1).copy(alpha = 0.35f))
+                        )
+                    }
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -109,11 +116,19 @@ fun BatchDocumentsTab(
                         .fillMaxWidth()
                         .background(
                             Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFF1E1B4B),
-                                    Color(0xFF281E60),
-                                    Color(0xFF19163D)
-                                )
+                                colors = if (isDark) {
+                                    listOf(
+                                        Color(0xFF1E1B4B),
+                                        Color(0xFF281E60),
+                                        Color(0xFF19163D)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color(0xFFEEF2FF),
+                                        Color(0xFFE0E7FF),
+                                        Color(0xFFEDE9FE)
+                                    )
+                                }
                             )
                         )
                 ) {
@@ -135,19 +150,19 @@ fun BatchDocumentsTab(
                                 text = "Batch PDF Merger",
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = if (isDark) Color.White else Color(0xFF1E1B4B)
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
                                 text = "Combine multiple PDF files securely on your device",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFFC7D2FE),
+                                color = if (isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA),
                                 lineHeight = 16.sp
                             )
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Action buttons row: + Upload PDFs & Samples
+                            // Action button: + Upload PDFs
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -170,7 +185,7 @@ fun BatchDocumentsTab(
                                                     listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
                                                 )
                                             )
-                                            .padding(horizontal = 14.dp, vertical = 9.dp),
+                                            .padding(horizontal = 18.dp, vertical = 10.dp),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -180,47 +195,14 @@ fun BatchDocumentsTab(
                                                 tint = Color.White,
                                                 modifier = Modifier.size(16.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(5.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
                                             Text(
                                                 text = "Upload PDFs",
                                                 fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
+                                                fontSize = 13.sp,
                                                 color = Color.White
                                             )
                                         }
-                                    }
-                                }
-
-                                // Secondary Button "✦ Samples"
-                                Surface(
-                                    shape = RoundedCornerShape(24.dp),
-                                    color = Color.White.copy(alpha = 0.10f),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        Color.White.copy(alpha = 0.20f)
-                                    ),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(24.dp))
-                                        .clickable { onLoadSamplePdfs() }
-                                        .testTag("sample_pdfs_button")
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.AutoAwesome,
-                                            contentDescription = null,
-                                            tint = Color(0xFFA5B4FC),
-                                            modifier = Modifier.size(15.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Samples",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 12.sp,
-                                            color = Color.White
-                                        )
                                     }
                                 }
                             }
@@ -385,7 +367,7 @@ fun BatchDocumentsTab(
                     )
 
                     Text(
-                        text = "Tap 'Upload PDFs' or 'Samples' above to get started with batch merging.",
+                        text = "Tap 'Upload PDFs' above or share a document from any app to get started.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
