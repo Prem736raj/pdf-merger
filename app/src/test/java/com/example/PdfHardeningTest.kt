@@ -116,7 +116,9 @@ class PdfHardeningTest {
         }
 
         val fixtureDir = File(System.getProperty("user.dir"), "build/qpdf-fixtures").apply { mkdirs() }
-        output.file.copyTo(File(fixtureDir, "protected-aes128.pdf"), overwrite = true)
+        val qpdfFixture = File(fixtureDir, "protected-aes128.pdf")
+        output.file.copyTo(qpdfFixture, overwrite = true)
+        assertTrue(qpdfFixture.exists() && qpdfFixture.length() > 0L)
     }
 
     @Test
