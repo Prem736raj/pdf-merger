@@ -167,7 +167,13 @@ fun MergeSuccessDialog(
                     }
 
                     Text(
-                        text = if (successState.isProtected) "PDF merged and password protection verified on-device." else "PDF merged successfully on-device.",
+                        text = when {
+                            successState.isProtected && successState.userPasswordSet ->
+                                "PDF merged and open-password protection verified on-device."
+                            successState.isProtected ->
+                                "PDF merged and encrypted permission settings verified on-device."
+                            else -> "PDF merged successfully on-device."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = secondaryTextColor,
                         textAlign = TextAlign.Center,
@@ -267,7 +273,13 @@ fun MergeSuccessDialog(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = if (successState.isProtected) "Security: Password protection verified" else "Security: Standard document",
+                                        text = when {
+                                            successState.isProtected && successState.userPasswordSet ->
+                                                "Security: Open password verified"
+                                            successState.isProtected ->
+                                                "Security: Encrypted permissions verified"
+                                            else -> "Security: Standard document"
+                                        },
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = securityTitleColor
@@ -292,10 +304,10 @@ fun MergeSuccessDialog(
                             val restrictions = mutableListOf<String>()
                             if (successState.userPasswordSet) restrictions.add("User Password Set") else restrictions.add("User Password: None")
                             if (successState.ownerPasswordSet) restrictions.add("Owner Password Set")
-                            if (successState.restrictedPrinting) restrictions.add("No Printing - Yes") else restrictions.add("No Printing - No")
-                            if (successState.restrictedModifying) restrictions.add("Modifying - Restricted") else restrictions.add("Modifying - No")
-                            if (successState.restrictedCopying) restrictions.add("Text Copying - Restricted") else restrictions.add("Text Copying - No")
-                            if (successState.restrictedAnnotations) restrictions.add("Annotations - Restricted") else restrictions.add("Annotations - Allowed")
+                            if (successState.restrictedPrinting) restrictions.add("Printing restriction set") else restrictions.add("Printing allowed")
+                            if (successState.restrictedModifying) restrictions.add("Modification restriction set") else restrictions.add("Modification allowed")
+                            if (successState.restrictedCopying) restrictions.add("Copy restriction set") else restrictions.add("Copying allowed")
+                            if (successState.restrictedAnnotations) restrictions.add("Annotation restriction set") else restrictions.add("Annotations allowed")
 
                             Text(
                                 text = restrictions.joinToString(" • "),
