@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   verify:
@@ -33,32 +33,19 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle 9.3.1
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "9.3.1"
 
-      - name: Restore Gradle wrapper when missing
+      - name: Verify committed Gradle wrapper
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! -f gradlew || ! -f gradlew.bat || ! -f gradle/wrapper/gradle-wrapper.jar ]]; then
-            gradle wrapper --gradle-version 9.3.1 --distribution-type bin
-            chmod +x gradlew
-          fi
-
-      - name: Commit restored wrapper on hardening branch
-        if: github.event_name == 'push' && github.ref == 'refs/heads/astra/pdf-merger-production-hardening'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -n "$(git status --porcelain -- gradlew gradlew.bat gradle/wrapper)" ]]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add gradlew gradlew.bat gradle/wrapper
-            git commit -m "build: restore complete Gradle wrapper"
-            git push origin HEAD:${GITHUB_REF_NAME}
-          fi
+          test -f gradlew
+          test -f gradlew.bat
+          test -f gradle/wrapper/gradle-wrapper.jar
+          test -f gradle/wrapper/gradle-wrapper.properties
+          chmod +x gradlew
+          ./gradlew --version
 
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
