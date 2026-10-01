@@ -273,6 +273,26 @@ class PdfHardeningTest {
     }
 
     @Test
+    fun hostileOutputNameCannotEscapePrivateMergedDirectory() = runBlocking {
+        val source = createTextPdf("path-source.pdf", listOf("PATH_MARKER"))
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("path", "Path", 0)),
+            sourceFilesMap = mapOf("path" to source),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "../../outside/../evil.pdf",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        val outputRoot = File(context.filesDir, "merged_pdfs").canonicalFile
+        val candidate = output.file.canonicalFile
+        assertEquals(outputRoot, candidate.parentFile)
+        assertFalse(candidate.name.contains(".."))
+        assertFalse(candidate.name.contains('/'))
+        assertFalse(candidate.name.contains('\\'))
+    }
+
+    @Test
     fun interactiveFormInputFailsInsteadOfSilentlyDetachingFields() = runBlocking {
         val source = createInteractiveFormPdf("interactive-form.pdf")
         val result = PdfMergerEngine.mergePdfPages(
