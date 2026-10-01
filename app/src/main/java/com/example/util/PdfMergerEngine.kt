@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSName
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
@@ -31,6 +32,8 @@ class PdfCompatibilityModeRequiredException(message: String, cause: Throwable? =
 data class PdfVerificationResult(
     val pageCount: Int,
     val isEncrypted: Boolean,
+    val encryptionAlgorithm: String?,
+    val encryptionKeyLength: Int?,
     val userPasswordAccepted: Boolean,
     val ownerPasswordAccepted: Boolean,
     val restrictedPrinting: Boolean,
@@ -260,6 +263,8 @@ object PdfMergerEngine {
         }
 
         var isEncrypted = false
+        var encryptionAlgorithm: String? = null
+        var encryptionKeyLength: Int? = null
         var restrictedPrinting = false
         var restrictedModifying = false
         var restrictedCopying = false
@@ -281,6 +286,22 @@ object PdfMergerEngine {
             }
 
             if (securityConfig.isEnabled) {
+                val encryption = verified.encryption
+                    ?: throw PdfSecurityException("Encrypted output has no readable encryption dictionary.")
+                val cryptMethod = encryption.stdCryptFilterDictionary?.cryptFilterMethod
+                if (encryption.filter != "Standard" ||
+                    encryption.version != 4 ||
+                    encryption.revision != 4 ||
+                    encryption.length != 128 ||
+                    cryptMethod != COSName.AESV2
+                ) {
+                    throw PdfSecurityException(
+                        "Protected output is not the required Standard AES-128 (AESV2) profile."
+                    )
+                }
+                encryptionAlgorithm = "AES-128"
+                encryptionKeyLength = encryption.length
+
                 val permission = verified.currentAccessPermission
                 restrictedPrinting = !permission.canPrint()
                 restrictedModifying = !permission.canModify()
@@ -317,6 +338,8 @@ object PdfMergerEngine {
         return PdfVerificationResult(
             pageCount = expectedPageCount,
             isEncrypted = isEncrypted,
+            encryptionAlgorithm = encryptionAlgorithm,
+            encryptionKeyLength = encryptionKeyLength,
             userPasswordAccepted = userPasswordAccepted,
             ownerPasswordAccepted = ownerPasswordAccepted,
             restrictedPrinting = restrictedPrinting,
@@ -364,6 +387,7 @@ object PdfMergerEngine {
         try {
             val policy = StandardProtectionPolicy(ownerPassword, config.userPassword, accessPermission).apply {
                 encryptionKeyLength = config.encryptionKeyLength
+                isPreferAES = true
             }
             document.protect(policy)
         } catch (e: Exception) {
