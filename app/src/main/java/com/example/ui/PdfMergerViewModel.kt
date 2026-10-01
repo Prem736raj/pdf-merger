@@ -658,10 +658,10 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun clearAllSessionData(notice: String) {
         val jobsToAwait = buildList {
-            mergeJob?.let(::add)
-            importJob?.let(::add)
-            sampleJob?.let(::add)
-            unlockJob?.let(::add)
+            mergeJob?.let { add(it) }
+            importJob?.let { add(it) }
+            sampleJob?.let { add(it) }
+            unlockJob?.let { add(it) }
             addAll(thumbnailJobs.values)
         }
         val clearCause = CancellationException("Session cleared")
