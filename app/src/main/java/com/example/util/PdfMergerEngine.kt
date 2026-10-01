@@ -6,6 +6,7 @@ import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
@@ -50,6 +51,7 @@ data class PdfMergeOutput(
 object PdfMergerEngine {
 
     private const val TAG = "PdfMergerEngine"
+    private const val PDFBOX_MAIN_MEMORY_BUDGET_BYTES = 16L * 1024L * 1024L
     private var isInitialized = false
 
     @Synchronized
@@ -65,11 +67,11 @@ object PdfMergerEngine {
         }
 
         return try {
-            val document = if (password.isNullOrEmpty()) {
-                PDDocument.load(file)
-            } else {
-                PDDocument.load(file, password)
-            }
+            val document = PDDocument.load(
+                file,
+                password.orEmpty(),
+                memoryUsageFor(file)
+            )
             if (document.isEncrypted) {
                 document.setAllSecurityToBeRemoved(true)
             }
@@ -273,7 +275,7 @@ object PdfMergerEngine {
 
         val openPassword = if (securityConfig.isEnabled) securityConfig.userPassword else ""
         val document = try {
-            if (openPassword.isEmpty()) PDDocument.load(file) else PDDocument.load(file, openPassword)
+            PDDocument.load(file, openPassword, memoryUsageFor(file))
         } catch (e: InvalidPasswordException) {
             throw PdfSecurityException("Merged PDF could not be reopened with the configured user password.", e)
         } catch (e: Exception) {
@@ -339,7 +341,11 @@ object PdfMergerEngine {
         val userPasswordAccepted = securityConfig.isEnabled && securityConfig.userPassword.isNotBlank()
         val ownerPasswordAccepted = if (securityConfig.isEnabled && securityConfig.ownerPassword.isNotBlank()) {
             try {
-                PDDocument.load(file, securityConfig.ownerPassword).use { ownerDoc ->
+                PDDocument.load(
+                    file,
+                    securityConfig.ownerPassword,
+                    memoryUsageFor(file)
+                ).use { ownerDoc ->
                     ownerDoc.currentAccessPermission.isOwnerPermission
                 }
             } catch (_: Exception) {
@@ -365,6 +371,12 @@ object PdfMergerEngine {
             restrictedCopying = restrictedCopying,
             restrictedAnnotations = restrictedAnnotations
         )
+    }
+
+    private fun memoryUsageFor(file: File): MemoryUsageSetting {
+        return MemoryUsageSetting.setupMixed(PDFBOX_MAIN_MEMORY_BUDGET_BYTES).apply {
+            file.parentFile?.takeIf { it.exists() && it.isDirectory }?.let(::setTempDir)
+        }
     }
 
     private fun validateSourceFidelity(document: PDDocument, displayName: String) {
