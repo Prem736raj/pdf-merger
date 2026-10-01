@@ -2,6 +2,7 @@
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="merged_pdfs/" />
+        <exclude domain="sharedpref" path="pdf_merger_save_prefs.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="merged_pdfs/" />
