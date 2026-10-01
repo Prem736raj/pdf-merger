@@ -218,9 +218,10 @@ fun PageThumbnailCard(
                     .clickable { onPreview() },
                 contentAlignment = Alignment.Center
             ) {
-                if (bitmap != null) {
+                val thumbnailBitmap = bitmap
+                if (thumbnailBitmap != null) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = thumbnailBitmap.asImageBitmap(),
                         contentDescription = "Page $sequenceNumber preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
