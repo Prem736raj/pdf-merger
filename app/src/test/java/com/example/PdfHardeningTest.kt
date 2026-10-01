@@ -1,0 +1,187 @@
+package com.example
+
+import android.content.Context
+import androidx.compose.ui.graphics.Color
+import androidx.test.core.app.ApplicationProvider
+import com.example.model.PdfPageItem
+import com.example.model.PdfSecurityConfig
+import com.example.util.FileUtil
+import com.example.util.PdfInvalidDocumentException
+import com.example.util.PdfMergerEngine
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDPage
+import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.text.PDFTextStripper
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.io.File
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
+class PdfHardeningTest {
+
+    private lateinit var context: Context
+    private lateinit var root: File
+
+    @Before
+    fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+        PdfMergerEngine.init(context)
+        root = File(context.cacheDir, "hardening_tests").apply {
+            deleteRecursively()
+            mkdirs()
+        }
+    }
+
+    @Test
+    fun vectorMergePreservesExactPageOrderAndSearchableText() = runBlocking {
+        val a = createTextPdf("a.pdf", listOf("A1", "A2", "A3"))
+        val b = createTextPdf("b.pdf", listOf("B1", "B2"))
+        val pages = listOf(
+            page("a", "A", 1),
+            page("b", "B", 0),
+            page("a", "A", 0),
+            page("b", "B", 1),
+            page("a", "A", 2)
+        )
+
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = pages,
+            sourceFilesMap = mapOf("a" to a, "b" to b),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "order-test",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        assertEquals(5, output.verification.pageCount)
+        assertFalse(output.verification.isEncrypted)
+        assertEquals(
+            listOf("A2", "B1", "A1", "B2", "A3"),
+            extractPageTexts(output.file).map { it.trim() }
+        )
+    }
+
+    @Test
+    fun protectedExportIsReopenedAndVerified() = runBlocking {
+        val source = createTextPdf("secure-source.pdf", listOf("SECURE_MARKER_8675309"))
+        val config = PdfSecurityConfig(
+            isEnabled = true,
+            userPassword = "Open-Password-42",
+            ownerPassword = "Owner-Password-99",
+            restrictPrinting = true,
+            restrictModifying = true,
+            restrictCopyingText = true,
+            restrictAddingAnnotations = true
+        )
+
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("secure", "Secure", 0)),
+            sourceFilesMap = mapOf("secure" to source),
+            securityConfig = config,
+            customOutputName = "secure-output",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        assertTrue(output.verification.isEncrypted)
+        assertTrue(output.verification.userPasswordAccepted)
+        assertTrue(output.verification.ownerPasswordAccepted)
+        assertTrue(output.verification.restrictedPrinting)
+        assertTrue(output.verification.restrictedModifying)
+        assertTrue(output.verification.restrictedCopying)
+        assertTrue(output.verification.restrictedAnnotations)
+
+        assertThrows(InvalidPasswordException::class.java) {
+            PDDocument.load(output.file, "wrong-password").close()
+        }
+        PDDocument.load(output.file, config.userPassword).use { document ->
+            assertEquals(1, document.numberOfPages)
+            assertTrue(document.isEncrypted)
+        }
+    }
+
+    @Test
+    fun unreadablePdfDoesNotBecomeFakeOnePageDocument() {
+        val malformed = File(root, "malformed.pdf").apply { writeText("%PDF-1.7\ntruncated") }
+        assertThrows(PdfInvalidDocumentException::class.java) {
+            FileUtil.getPdfPageCount(malformed)
+        }
+    }
+
+    @Test
+    fun invalidRequestedPageFailsInsteadOfSilentlyDisappearing() = runBlocking {
+        val source = createTextPdf("one-page.pdf", listOf("ONLY_PAGE"))
+        val result = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("source", "One page", 1)),
+            sourceFilesMap = mapOf("source" to source),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "invalid-page",
+            onProgress = { _, _ -> }
+        )
+        assertTrue(result.isFailure)
+    }
+
+    @Test
+    fun ownedSessionCleanupIsRecursiveAndScoped() {
+        val session = FileUtil.documentSessionDir(context, "doc-1")
+        File(session, "nested").mkdirs()
+        File(session, "nested/source.pdf").writeText("temporary")
+        val unrelated = File(context.cacheDir, "unrelated.keep").apply { writeText("keep") }
+
+        FileUtil.deleteDocumentSession(context, "doc-1")
+
+        assertFalse(session.exists())
+        assertTrue(unrelated.exists())
+    }
+
+    private fun page(documentId: String, name: String, index: Int): PdfPageItem =
+        PdfPageItem(
+            id = "${documentId}_p$index",
+            documentId = documentId,
+            documentName = name,
+            pageIndex = index,
+            accentColor = Color.Black
+        )
+
+    private fun createTextPdf(name: String, markers: List<String>): File {
+        val file = File(root, name)
+        PDDocument().use { document ->
+            markers.forEach { marker ->
+                val page = PDPage()
+                document.addPage(page)
+                PDPageContentStream(document, page).use { stream ->
+                    stream.beginText()
+                    stream.setFont(PDType1Font.HELVETICA, 12f)
+                    stream.newLineAtOffset(72f, 720f)
+                    stream.showText(marker)
+                    stream.endText()
+                }
+            }
+            document.save(file)
+        }
+        return file
+    }
+
+    private fun extractPageTexts(file: File): List<String> {
+        return PDDocument.load(file).use { document ->
+            (1..document.numberOfPages).map { pageNumber ->
+                PDFTextStripper().apply {
+                    startPage = pageNumber
+                    endPage = pageNumber
+                }.getText(document)
+            }
+        }
+    }
+}
