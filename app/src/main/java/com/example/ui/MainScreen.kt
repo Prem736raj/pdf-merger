@@ -104,10 +104,8 @@ import com.example.ui.screens.BatchDocumentsTab
 import com.example.ui.screens.PagesGridTab
 import com.example.ui.screens.SecurityTab
 import com.example.util.FileUtil
-import kotlinx.coroutines.Dispatchers
+import com.example.util.PdfSaveManager
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.FileInputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,18 +127,35 @@ fun MainScreen(
             val fileToSave = (uiState.mergeState as? MergeState.Success)?.outputFile ?: uiState.lastMergedFile
             if (fileToSave != null && fileToSave.exists()) {
                 scope.launch {
-                    try {
-                        withContext(Dispatchers.IO) {
-                            context.contentResolver.openOutputStream(destinationUri)?.use { out ->
-                                FileInputStream(fileToSave).use { input ->
-                                    input.copyTo(out)
-                                }
-                            }
+                    when (
+                        val result = PdfSaveManager.saveMergedPdfToUri(
+                            context = context,
+                            sourcePdfFile = fileToSave,
+                            destinationUri = destinationUri,
+                            displayName = "selected location"
+                        )
+                    ) {
+                        is PdfSaveManager.SaveResult.Success -> {
+                            Toast.makeText(
+                                context,
+                                "PDF saved successfully.",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
-                        Toast.makeText(context, "PDF saved to device successfully!", Toast.LENGTH_LONG).show()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        Toast.makeText(context, "Error saving PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                        is PdfSaveManager.SaveResult.Failure -> {
+                            Toast.makeText(
+                                context,
+                                "Save failed: ${result.errorMessage}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        PdfSaveManager.SaveResult.RequiresPicker -> {
+                            Toast.makeText(
+                                context,
+                                "Save failed. Please choose a location again.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }
             }

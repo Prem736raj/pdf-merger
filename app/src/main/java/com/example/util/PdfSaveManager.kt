@@ -114,6 +114,40 @@ object PdfSaveManager {
         }
     }
 
+    suspend fun saveMergedPdfToUri(
+        context: Context,
+        sourcePdfFile: File,
+        destinationUri: Uri,
+        displayName: String = "selected location"
+    ): SaveResult = withContext(Dispatchers.IO) {
+        if (!sourcePdfFile.exists() || !sourcePdfFile.isFile || sourcePdfFile.length() <= 0L) {
+            return@withContext SaveResult.Failure("Merged PDF is missing or empty.")
+        }
+
+        try {
+            val destination = context.contentResolver.openOutputStream(destinationUri, "w")
+                ?: throw IOException("The document provider returned no writable output stream.")
+            val copied = destination.use { output ->
+                FileInputStream(sourcePdfFile).use { input ->
+                    input.copyTo(output).also { output.flush() }
+                }
+            }
+            if (copied != sourcePdfFile.length()) {
+                throw IOException("The provider wrote $copied of ${sourcePdfFile.length()} bytes.")
+            }
+
+            SaveResult.Success(
+                destinationUri = destinationUri,
+                displayPath = displayName,
+                fileName = exportFileName(sourcePdfFile.name)
+            )
+        } catch (e: Exception) {
+            runCatching { context.contentResolver.delete(destinationUri, null, null) }
+            Log.e(TAG, "Save As write failed", e)
+            SaveResult.Failure("Could not write the PDF to the selected location.")
+        }
+    }
+
     private fun saveToCustomTree(context: Context, source: File, fileName: String): SaveResult {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val treeValue = prefs.getString(KEY_CUSTOM_TREE_URI, null)
