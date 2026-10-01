@@ -16,6 +16,7 @@ import com.example.util.PdfWrongPasswordException
 import com.example.util.PdfSaveManager
 import com.example.util.PdfThumbnailHelper
 import com.example.util.SamplePdfGenerator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -75,6 +76,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(PdfMergerUiState())
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
     private val thumbnailJobs = mutableMapOf<String, Job>()
+    private var mergeJob: Job? = null
 
     private val documentColorPalette = listOf(
         Color(0xFF4F46E5), // Indigo
@@ -632,108 +634,138 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.update { it.copy(userNotice = "No pages to merge. Please add at least one PDF.") }
             return
         }
+        if (mergeJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "A merge is already in progress.") }
+            return
+        }
 
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    mergeState = MergeState.Merging(0.01f, "Initializing merge...")
+        mergeJob = viewModelScope.launch {
+            var pendingOutput: File? = null
+            try {
+                _uiState.update {
+                    it.copy(mergeState = MergeState.Merging(0.01f, "Initializing merge..."))
+                }
+
+                val context = getApplication<Application>()
+                val sourceFiles = _uiState.value.documents.associate { it.id to it.localFile }
+                val secConfig = _uiState.value.securityConfig
+
+                val result = PdfMergerEngine.mergePdfPages(
+                    context = context,
+                    orderedPages = pagesToMerge,
+                    sourceFilesMap = sourceFiles,
+                    securityConfig = secConfig,
+                    customOutputName = _uiState.value.outputFileName,
+                    onProgress = { progress, step ->
+                        _uiState.update { it.copy(mergeState = MergeState.Merging(progress, step)) }
+                    }
                 )
-            }
 
-            val context = getApplication<Application>()
-            val sourceFiles = _uiState.value.documents.associate { it.id to it.localFile }
-            val secConfig = _uiState.value.securityConfig
-
-            val result = PdfMergerEngine.mergePdfPages(
-                context = context,
-                orderedPages = pagesToMerge,
-                sourceFilesMap = sourceFiles,
-                securityConfig = secConfig,
-                customOutputName = _uiState.value.outputFileName,
-                onProgress = { progress, step ->
-                    _uiState.update { it.copy(mergeState = MergeState.Merging(progress, step)) }
-                }
-            )
-
-            result.fold(
-                onSuccess = { mergeOutput ->
-                    val outputFile = mergeOutput.file
-                    val verification = mergeOutput.verification
-                    // Attempt direct save to user's chosen folder or Downloads
-                    val saveResult = PdfSaveManager.saveMergedPdfDirectly(
-                        context = context,
-                        sourcePdfFile = outputFile,
-                        customFileName = _uiState.value.outputFileName
-                    )
-
-                    val outcome = when (saveResult) {
-                        is PdfSaveManager.SaveResult.Success -> {
-                            SaveOutcome(
-                                destUri = saveResult.destinationUri,
-                                destDisplay = saveResult.displayPath,
-                                shouldTriggerPicker = false,
-                                notice = "Successfully merged and downloaded directly to ${saveResult.displayPath}!"
-                            )
+                result.fold(
+                    onSuccess = { mergeOutput ->
+                        val outputFile = mergeOutput.file
+                        pendingOutput = outputFile
+                        val verification = mergeOutput.verification
+                        _uiState.update {
+                            it.copy(mergeState = MergeState.Merging(0.99f, "Saving merged PDF..."))
                         }
-                        is PdfSaveManager.SaveResult.RequiresPicker -> {
-                            SaveOutcome(null, null, true, "Merge complete! Please choose a save location.")
-                        }
-                        is PdfSaveManager.SaveResult.Failure -> {
-                            SaveOutcome(null, null, true, "Merge complete! ${saveResult.errorMessage}")
-                        }
-                    }
 
-                    _uiState.update { current ->
-                        current.copy(
-                            lastMergedFile = outputFile,
-                            lastSavedDestinationUri = outcome.destUri,
-                            lastSavedPathDisplay = outcome.destDisplay,
-                            triggerSaveDialog = outcome.shouldTriggerPicker,
-                            mergeState = MergeState.Success(
-                                outputFile = outputFile,
-                                totalPages = verification.pageCount,
-                                fileSizeBytes = outputFile.length(),
-                                isProtected = verification.isEncrypted,
-                                userPasswordSet = verification.userPasswordAccepted,
-                                ownerPasswordSet = verification.ownerPasswordAccepted,
-                                restrictedPrinting = verification.restrictedPrinting,
-                                restrictedModifying = verification.restrictedModifying,
-                                restrictedCopying = verification.restrictedCopying,
-                                restrictedAnnotations = verification.restrictedAnnotations,
-                                savedPathDisplay = outcome.destDisplay
-                            ),
-                            userNotice = outcome.notice
+                        val saveResult = PdfSaveManager.saveMergedPdfDirectly(
+                            context = context,
+                            sourcePdfFile = outputFile,
+                            customFileName = _uiState.value.outputFileName
                         )
-                    }
-                },
-                onFailure = { error ->
-                    val errorMsg = error.localizedMessage ?: "Merge failed"
-                    val isPasswordError = error is PdfPasswordRequiredException || error is PdfWrongPasswordException
 
-                    if (isPasswordError) {
-                        // Find the locked document that needs a password
-                        val lockedDoc = _uiState.value.documents.find { doc ->
-                            errorMsg.contains(doc.fileName, ignoreCase = true) ||
+                        val outcome = when (saveResult) {
+                            is PdfSaveManager.SaveResult.Success -> {
+                                SaveOutcome(
+                                    destUri = saveResult.destinationUri,
+                                    destDisplay = saveResult.displayPath,
+                                    shouldTriggerPicker = false,
+                                    notice = "Successfully merged and downloaded directly to ${saveResult.displayPath}!"
+                                )
+                            }
+                            is PdfSaveManager.SaveResult.RequiresPicker -> {
+                                SaveOutcome(null, null, true, "Merge complete! Please choose a save location.")
+                            }
+                            is PdfSaveManager.SaveResult.Failure -> {
+                                SaveOutcome(null, null, true, "Merge complete! ${saveResult.errorMessage}")
+                            }
+                        }
+
+                        _uiState.update { current ->
+                            current.copy(
+                                lastMergedFile = outputFile,
+                                lastSavedDestinationUri = outcome.destUri,
+                                lastSavedPathDisplay = outcome.destDisplay,
+                                triggerSaveDialog = outcome.shouldTriggerPicker,
+                                mergeState = MergeState.Success(
+                                    outputFile = outputFile,
+                                    totalPages = verification.pageCount,
+                                    fileSizeBytes = outputFile.length(),
+                                    isProtected = verification.isEncrypted,
+                                    userPasswordSet = verification.userPasswordAccepted,
+                                    ownerPasswordSet = verification.ownerPasswordAccepted,
+                                    restrictedPrinting = verification.restrictedPrinting,
+                                    restrictedModifying = verification.restrictedModifying,
+                                    restrictedCopying = verification.restrictedCopying,
+                                    restrictedAnnotations = verification.restrictedAnnotations,
+                                    savedPathDisplay = outcome.destDisplay
+                                ),
+                                userNotice = outcome.notice
+                            )
+                        }
+                        pendingOutput = null
+                    },
+                    onFailure = { error ->
+                        val errorMsg = error.localizedMessage ?: "Merge failed"
+                        val isPasswordError =
+                            error is PdfPasswordRequiredException || error is PdfWrongPasswordException
+
+                        if (isPasswordError) {
+                            val lockedDoc = _uiState.value.documents.find { doc ->
+                                errorMsg.contains(doc.fileName, ignoreCase = true) ||
                                     errorMsg.contains(doc.localFile.name, ignoreCase = true)
-                        } ?: _uiState.value.documents.firstOrNull { it.isLocked } ?: _uiState.value.documents.firstOrNull()
+                            } ?: _uiState.value.documents.firstOrNull { it.isLocked }
+                                ?: _uiState.value.documents.firstOrNull()
 
-                        _uiState.update {
-                            it.copy(
-                                mergeState = MergeState.Idle,
-                                lockedDocumentPrompt = lockedDoc,
-                                userNotice = "Password required to unlock ${lockedDoc?.fileName ?: "document"}."
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                mergeState = MergeState.Error(errorMsg),
-                                userNotice = "Merge failed: $errorMsg"
-                            )
+                            _uiState.update {
+                                it.copy(
+                                    mergeState = MergeState.Idle,
+                                    lockedDocumentPrompt = lockedDoc,
+                                    userNotice = "Password required to unlock ${lockedDoc?.fileName ?: "document"}."
+                                )
+                            }
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    mergeState = MergeState.Error(errorMsg),
+                                    userNotice = "Merge failed: $errorMsg"
+                                )
+                            }
                         }
                     }
+                )
+            } catch (e: CancellationException) {
+                pendingOutput?.delete()
+                _uiState.update {
+                    it.copy(
+                        mergeState = MergeState.Idle,
+                        triggerSaveDialog = false,
+                        userNotice = "Merge cancelled."
+                    )
                 }
-            )
+                throw e
+            } finally {
+                mergeJob = null
+            }
+        }
+    }
+
+    fun cancelMerge() {
+        val activeJob = mergeJob
+        if (activeJob?.isActive == true) {
+            activeJob.cancel(CancellationException("Merge cancelled by user"))
         }
     }
 

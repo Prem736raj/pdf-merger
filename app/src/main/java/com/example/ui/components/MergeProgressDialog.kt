@@ -20,6 +20,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +36,8 @@ import com.example.model.MergeState
 
 @Composable
 fun MergeProgressDialog(
-    mergeState: MergeState.Merging
+    mergeState: MergeState.Merging,
+    onCancel: () -> Unit
 ) {
     Dialog(
         onDismissRequest = { /* Prevent dismissal while merging */ },
@@ -104,6 +106,15 @@ fun MergeProgressDialog(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.testTag("cancel_merge_button")
+                ) {
+                    Text("Cancel merge")
+                }
             }
         }
     }

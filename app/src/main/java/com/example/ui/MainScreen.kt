@@ -591,7 +591,10 @@ fun MainScreen(
 
     // Merge Progress Dialog
     (uiState.mergeState as? MergeState.Merging)?.let { mergingState ->
-        MergeProgressDialog(mergeState = mergingState)
+        MergeProgressDialog(
+            mergeState = mergingState,
+            onCancel = { viewModel.cancelMerge() }
+        )
     }
 
     // Merge Success Dialog with Download/Save

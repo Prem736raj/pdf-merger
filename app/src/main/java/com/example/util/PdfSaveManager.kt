@@ -9,6 +9,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -141,6 +142,9 @@ object PdfSaveManager {
                 displayPath = displayName,
                 fileName = exportFileName(sourcePdfFile.name)
             )
+        } catch (e: CancellationException) {
+            runCatching { context.contentResolver.delete(destinationUri, null, null) }
+            throw e
         } catch (e: Exception) {
             runCatching { context.contentResolver.delete(destinationUri, null, null) }
             Log.e(TAG, "Save As write failed", e)
@@ -175,6 +179,11 @@ object PdfSaveManager {
 
             val folderName = prefs.getString(KEY_CUSTOM_FOLDER_NAME, "Chosen Folder") ?: "Chosen Folder"
             SaveResult.Success(createdUri!!, "$folderName/$fileName", fileName)
+        } catch (e: CancellationException) {
+            createdUri?.let { uri ->
+                runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            }
+            throw e
         } catch (e: Exception) {
             createdUri?.let { uri ->
                 runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
@@ -219,6 +228,9 @@ object PdfSaveManager {
                 "Downloads/PDF_Merger/$fileName",
                 fileName
             )
+        } catch (e: CancellationException) {
+            targetUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
+            throw e
         } catch (e: Exception) {
             targetUri?.let { uri -> runCatching { context.contentResolver.delete(uri, null, null) } }
             Log.e(TAG, "MediaStore save failed", e)
