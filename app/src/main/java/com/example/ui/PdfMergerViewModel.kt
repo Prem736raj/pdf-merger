@@ -11,6 +11,8 @@ import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.example.util.FileUtil
 import com.example.util.PdfMergerEngine
+import com.example.util.PdfPasswordRequiredException
+import com.example.util.PdfWrongPasswordException
 import com.example.util.PdfSaveManager
 import com.example.util.PdfThumbnailHelper
 import com.example.util.SamplePdfGenerator
@@ -175,13 +177,13 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             val doc = _uiState.value.documents.find { it.id == documentId } ?: return@launch
             val context = getApplication<Application>()
-            val sanitizedFile = File(context.cacheDir, "unlocked_${doc.fileName}")
+            val sanitizedFile = File(context.cacheDir, "unlocked_${doc.id}.pdf")
             val success = withContext(Dispatchers.IO) {
                 PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
             }
             if (success) {
                 val updatedDocs = _uiState.value.documents.map {
-                    if (it.id == documentId) it.copy(localFile = sanitizedFile, isLocked = false, password = password) else it
+                    if (it.id == documentId) it.copy(localFile = sanitizedFile, isLocked = false) else it
                 }
                 val newPasswords = _uiState.value.documentPasswords + (documentId to password)
                 _uiState.update {
@@ -536,7 +538,9 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             )
 
             result.fold(
-                onSuccess = { outputFile ->
+                onSuccess = { mergeOutput ->
+                    val outputFile = mergeOutput.file
+                    val verification = mergeOutput.verification
                     // Attempt direct save to user's chosen folder or Downloads
                     val saveResult = PdfSaveManager.saveMergedPdfDirectly(
                         context = context,
@@ -569,15 +573,15 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                             triggerSaveDialog = outcome.shouldTriggerPicker,
                             mergeState = MergeState.Success(
                                 outputFile = outputFile,
-                                totalPages = pagesToMerge.size,
+                                totalPages = verification.pageCount,
                                 fileSizeBytes = outputFile.length(),
-                                isProtected = secConfig.isEnabled,
-                                userPasswordSet = secConfig.userPassword.isNotBlank(),
-                                ownerPasswordSet = secConfig.ownerPassword.isNotBlank(),
-                                restrictedPrinting = secConfig.restrictPrinting,
-                                restrictedModifying = secConfig.restrictModifying,
-                                restrictedCopying = secConfig.restrictCopyingText,
-                                restrictedAnnotations = secConfig.restrictAddingAnnotations,
+                                isProtected = verification.isEncrypted,
+                                userPasswordSet = verification.userPasswordAccepted,
+                                ownerPasswordSet = verification.ownerPasswordAccepted,
+                                restrictedPrinting = verification.restrictedPrinting,
+                                restrictedModifying = verification.restrictedModifying,
+                                restrictedCopying = verification.restrictedCopying,
+                                restrictedAnnotations = verification.restrictedAnnotations,
                                 savedPathDisplay = outcome.destDisplay
                             ),
                             userNotice = outcome.notice
@@ -586,8 +590,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 },
                 onFailure = { error ->
                     val errorMsg = error.localizedMessage ?: "Merge failed"
-                    val isPasswordError = error is com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException ||
-                            errorMsg.contains("password", ignoreCase = true)
+                    val isPasswordError = error is PdfPasswordRequiredException || error is PdfWrongPasswordException
 
                     if (isPasswordError) {
                         // Find the locked document that needs a password

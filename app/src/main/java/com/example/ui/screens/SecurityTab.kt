@@ -167,7 +167,11 @@ fun SecurityTab(
                 ) {
                     Text("Security Level:", style = MaterialTheme.typography.bodySmall)
                     Text(
-                        text = if (securityConfig.isEnabled) "AES 128-bit Encrypted" else "Standard (No Password)",
+                        text = when {
+                            securityConfig.isPasswordConfigured -> "Protection requested"
+                            securityConfig.isEnabled -> "Protection needs a password"
+                            else -> "Standard (No Password)"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = if (securityConfig.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant

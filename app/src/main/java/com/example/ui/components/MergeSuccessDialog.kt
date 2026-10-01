@@ -167,7 +167,7 @@ fun MergeSuccessDialog(
                     }
 
                     Text(
-                        text = "All pages combined and encrypted securely on-device.",
+                        text = if (successState.isProtected) "PDF merged and password protection verified on-device." else "PDF merged successfully on-device.",
                         style = MaterialTheme.typography.bodySmall,
                         color = secondaryTextColor,
                         textAlign = TextAlign.Center,
@@ -267,7 +267,7 @@ fun MergeSuccessDialog(
                                     }
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text = if (successState.isProtected) "Security: AES 128-bit Protected" else "Security: Standard Document",
+                                        text = if (successState.isProtected) "Security: Password protection verified" else "Security: Standard document",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
                                         color = securityTitleColor
@@ -276,7 +276,7 @@ fun MergeSuccessDialog(
 
                                 Icon(
                                     imageVector = Icons.Default.CheckCircle,
-                                    contentDescription = "Verified Protection",
+                                    contentDescription = if (successState.isProtected) "Protection verified" else "PDF verified",
                                     tint = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7),
                                     modifier = Modifier.size(20.dp)
                                 )
@@ -295,7 +295,7 @@ fun MergeSuccessDialog(
                             if (successState.restrictedPrinting) restrictions.add("No Printing - Yes") else restrictions.add("No Printing - No")
                             if (successState.restrictedModifying) restrictions.add("Modifying - Restricted") else restrictions.add("Modifying - No")
                             if (successState.restrictedCopying) restrictions.add("Text Copying - Restricted") else restrictions.add("Text Copying - No")
-                            restrictions.add("Annotations - No")
+                            if (successState.restrictedAnnotations) restrictions.add("Annotations - Restricted") else restrictions.add("Annotations - Allowed")
 
                             Text(
                                 text = restrictions.joinToString(" • "),

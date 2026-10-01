@@ -115,7 +115,7 @@ fun SecuritySettingsCard(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = if (config.isEnabled) "Encryption & restrictions enabled" else "No security locks applied",
+                            text = if (config.isEnabled) "Protection settings enabled" else "No protection requested",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (config.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -155,7 +155,7 @@ fun SecuritySettingsCard(
                             )
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                text = "Standard AES 128-bit encryption will protect the merged file against unauthorized viewing and actions.",
+                                text = "Protection is applied only after export succeeds and the saved PDF is reopened for verification. Permission restrictions depend on the PDF reader enforcing them.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
@@ -255,7 +255,7 @@ fun SecuritySettingsCard(
                     // A: Restrict Printing
                     PermissionToggleRow(
                         title = "Restrict Printing",
-                        description = "Prevent printing the document or downsample to low-res",
+                        description = "Request PDF readers to disallow printing",
                         icon = Icons.Default.Print,
                         isChecked = config.restrictPrinting,
                         onCheckedChange = { onConfigChange(config.copy(restrictPrinting = it)) },
@@ -265,7 +265,7 @@ fun SecuritySettingsCard(
                     // B: Restrict Modifying
                     PermissionToggleRow(
                         title = "Restrict Modifying Contents",
-                        description = "Prevent editing text, extracting pages, or altering layout",
+                        description = "Request PDF readers to disallow document modification",
                         icon = Icons.Default.Edit,
                         isChecked = config.restrictModifying,
                         onCheckedChange = { onConfigChange(config.copy(restrictModifying = it)) },
@@ -275,7 +275,7 @@ fun SecuritySettingsCard(
                     // C: Restrict Copying Text
                     PermissionToggleRow(
                         title = "Restrict Copying Text & Graphics",
-                        description = "Prevent selecting and copying content to clipboard",
+                        description = "Request PDF readers to disallow content extraction",
                         icon = Icons.Default.ContentCopy,
                         isChecked = config.restrictCopyingText,
                         onCheckedChange = { onConfigChange(config.copy(restrictCopyingText = it)) },
@@ -285,7 +285,7 @@ fun SecuritySettingsCard(
                     // D: Restrict Adding Annotations
                     PermissionToggleRow(
                         title = "Restrict Annotations & Comments",
-                        description = "Prevent adding markup, sticky notes, or form fill changes",
+                        description = "Request PDF readers to disallow annotation changes",
                         icon = Icons.AutoMirrored.Filled.Comment,
                         isChecked = config.restrictAddingAnnotations,
                         onCheckedChange = { onConfigChange(config.copy(restrictAddingAnnotations = it)) },
