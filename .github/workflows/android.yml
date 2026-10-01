@@ -47,6 +47,9 @@ jobs:
           chmod +x gradlew
           ./gradlew --version
 
+      - name: Clean
+        run: ./gradlew clean --stacktrace
+
       - name: Unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
