@@ -13,6 +13,5 @@ data class PdfDocumentItem(
     val localFile: File,
     val accentColor: Color,
     val isEncrypted: Boolean = false,
-    val isLocked: Boolean = false,
-    val password: String? = null
+    val isLocked: Boolean = false
 )
