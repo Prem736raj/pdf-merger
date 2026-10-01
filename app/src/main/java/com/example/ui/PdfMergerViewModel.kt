@@ -78,6 +78,9 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
     private val thumbnailJobs = mutableMapOf<String, Job>()
     private var mergeJob: Job? = null
+    private var importJob: Job? = null
+    private var sampleJob: Job? = null
+    private var unlockJob: Job? = null
     private var sessionCleanupJob: Job? = null
     private val startupCleanup = viewModelScope.async(Dispatchers.IO) {
         val context = getApplication<Application>()
@@ -178,57 +181,75 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun unlockDocumentWithPassword(documentId: String, password: String) {
-        viewModelScope.launch {
-            val doc = _uiState.value.documents.find { it.id == documentId } ?: return@launch
-            val context = getApplication<Application>()
-            val sanitizedFile = File(FileUtil.documentSessionDir(context, doc.id), "unlocked.pdf")
-            val success = withContext(Dispatchers.IO) {
-                PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
-            }
+        if (unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "A password unlock is already in progress.") }
+            return
+        }
 
-            if (!success) {
-                _uiState.update {
-                    it.copy(userNotice = "Incorrect password for ${doc.fileName}. Please try again.")
-                }
-                return@launch
-            }
-
+        unlockJob = viewModelScope.launch {
             try {
-                val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(sanitizedFile) }
-                val pages = (0 until pageCount).map { pageIndex ->
-                    PdfPageItem(
-                        id = "${doc.id}_p$pageIndex",
-                        documentId = doc.id,
-                        documentName = doc.fileName,
-                        pageIndex = pageIndex,
-                        accentColor = doc.accentColor
-                    )
+                awaitSessionStorageReady()
+                val doc = _uiState.value.documents.find { it.id == documentId } ?: return@launch
+                val context = getApplication<Application>()
+                val sanitizedFile = File(FileUtil.documentSessionDir(context, doc.id), "unlocked.pdf")
+                val success = withContext(Dispatchers.IO) {
+                    PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
                 }
 
-                _uiState.update { current ->
-                    current.copy(
-                        documents = current.documents.map {
-                            if (it.id == documentId) {
-                                it.copy(
-                                    localFile = sanitizedFile,
-                                    fileSizeBytes = sanitizedFile.length(),
-                                    pageCount = pageCount,
-                                    isEncrypted = true,
-                                    isLocked = false
-                                )
-                            } else it
-                        },
-                        pages = current.pages.filterNot { it.documentId == documentId } + pages,
-                        lockedDocumentPrompt = null,
-                        userNotice = "Unlocked ${doc.fileName}. Password was not retained."
-                    )
+                if (!success) {
+                    _uiState.update {
+                        it.copy(userNotice = "Incorrect password for ${doc.fileName}. Please try again.")
+                    }
+                    return@launch
                 }
-                calculateCacheSize()
-            } catch (e: Exception) {
-                sanitizedFile.delete()
-                _uiState.update {
-                    it.copy(userNotice = "Could not validate ${doc.fileName}: ${e.message}")
+
+                try {
+                    val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(sanitizedFile) }
+                    val pages = (0 until pageCount).map { pageIndex ->
+                        PdfPageItem(
+                            id = "${doc.id}_p$pageIndex",
+                            documentId = doc.id,
+                            documentName = doc.fileName,
+                            pageIndex = pageIndex,
+                            accentColor = doc.accentColor
+                        )
+                    }
+
+                    _uiState.update { current ->
+                        if (current.documents.none { it.id == documentId }) {
+                            sanitizedFile.delete()
+                            current
+                        } else {
+                            current.copy(
+                                documents = current.documents.map {
+                                    if (it.id == documentId) {
+                                        it.copy(
+                                            localFile = sanitizedFile,
+                                            fileSizeBytes = sanitizedFile.length(),
+                                            pageCount = pageCount,
+                                            isEncrypted = true,
+                                            isLocked = false
+                                        )
+                                    } else it
+                                },
+                                pages = current.pages.filterNot { it.documentId == documentId } + pages,
+                                lockedDocumentPrompt = null,
+                                userNotice = "Unlocked ${doc.fileName}. Password was not retained."
+                            )
+                        }
+                    }
+                    calculateCacheSize()
+                } catch (e: CancellationException) {
+                    sanitizedFile.delete()
+                    throw e
+                } catch (e: Exception) {
+                    sanitizedFile.delete()
+                    _uiState.update {
+                        it.copy(userNotice = "Could not validate ${doc.fileName}: ${e.message}")
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
             }
         }
     }
@@ -250,7 +271,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadSampleDocuments() {
-        viewModelScope.launch {
+        if (sampleJob?.isActive == true || importJob?.isActive == true || unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "Another document operation is already in progress.") }
+            return
+        }
+
+        sampleJob = viewModelScope.launch {
             awaitSessionStorageReady()
             _uiState.update {
                 it.copy(
@@ -260,7 +286,9 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             }
             try {
                 val context = getApplication<Application>()
-                val sampleFiles = SamplePdfGenerator.generateStandardSampleDocuments(context)
+                val sampleFiles = withContext(Dispatchers.IO) {
+                    SamplePdfGenerator.generateStandardSampleDocuments(context)
+                }
 
                 val newDocs = mutableListOf<PdfDocumentItem>()
                 val newPages = mutableListOf<PdfPageItem>()
@@ -268,7 +296,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 sampleFiles.forEachIndexed { index, file ->
                     val color = documentColorPalette[(_uiState.value.documents.size + index) % documentColorPalette.size]
                     val docId = UUID.randomUUID().toString()
-                    val pageCount = FileUtil.getPdfPageCount(file)
+                    val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(file) }
 
                     val docItem = PdfDocumentItem(
                         id = docId,
@@ -299,14 +327,17 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                         documents = current.documents + newDocs,
                         pages = current.pages + newPages,
                         isProcessing = false,
+                        processingMessage = "",
                         userNotice = "Loaded ${newDocs.size} sample PDF files ready for testing!"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
                 _uiState.update {
                     it.copy(
                         isProcessing = false,
+                        processingMessage = "",
                         userNotice = "Failed to load sample documents: ${e.message}"
                     )
                 }
@@ -316,8 +347,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun addDocumentsFromUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        if (importJob?.isActive == true || sampleJob?.isActive == true || unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "Another document operation is already in progress.") }
+            return
+        }
 
-        viewModelScope.launch {
+        importJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isProcessing = true,
@@ -325,106 +360,114 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
-            awaitSessionStorageReady()
-            val context = getApplication<Application>()
-            val newDocs = mutableListOf<PdfDocumentItem>()
-            val newPages = mutableListOf<PdfPageItem>()
-            val failedImports = mutableListOf<String>()
-            var firstLockedDocument: PdfDocumentItem? = null
-            val uniqueUris = uris.distinct()
+            try {
+                awaitSessionStorageReady()
+                val context = getApplication<Application>()
+                val newDocs = mutableListOf<PdfDocumentItem>()
+                val newPages = mutableListOf<PdfPageItem>()
+                val failedImports = mutableListOf<String>()
+                var firstLockedDocument: PdfDocumentItem? = null
+                val uniqueUris = uris.distinct()
 
-            for ((index, uri) in uniqueUris.withIndex()) {
-                val documentId = UUID.randomUUID().toString()
-                val displayName = FileUtil.getFileNameFromUri(context, uri)
-                val color = documentColorPalette[
-                    (_uiState.value.documents.size + index) % documentColorPalette.size
-                ]
+                for ((index, uri) in uniqueUris.withIndex()) {
+                    val documentId = UUID.randomUUID().toString()
+                    val displayName = FileUtil.getFileNameFromUri(context, uri)
+                    val color = documentColorPalette[
+                        (_uiState.value.documents.size + index) % documentColorPalette.size
+                    ]
 
-                try {
-                    _uiState.update {
-                        it.copy(processingMessage = "Importing file ${index + 1} of ${uniqueUris.size}...")
-                    }
+                    try {
+                        _uiState.update {
+                            it.copy(processingMessage = "Importing file ${index + 1} of ${uniqueUris.size}...")
+                        }
 
-                    val cachedFile = FileUtil.copyUriToCache(
-                        context = context,
-                        uri = uri,
-                        documentId = documentId,
-                        customName = displayName
-                    )
-                    val pageCount = FileUtil.getPdfPageCount(cachedFile)
-                    val document = PdfDocumentItem(
-                        id = documentId,
-                        fileName = displayName,
-                        fileSizeBytes = cachedFile.length(),
-                        pageCount = pageCount,
-                        sourceUri = uri,
-                        localFile = cachedFile,
-                        accentColor = color
-                    )
-                    newDocs.add(document)
-
-                    for (pageIndex in 0 until pageCount) {
-                        newPages.add(
-                            PdfPageItem(
-                                id = "${documentId}_p$pageIndex",
-                                documentId = documentId,
-                                documentName = displayName,
-                                pageIndex = pageIndex,
-                                accentColor = color
-                            )
+                        val cachedFile = FileUtil.copyUriToCache(
+                            context = context,
+                            uri = uri,
+                            documentId = documentId,
+                            customName = displayName
                         )
-                    }
-                } catch (e: PdfPasswordRequiredException) {
-                    val sourceFile = FileUtil.documentSessionDir(context, documentId)
-                        .listFiles()
-                        ?.firstOrNull { it.isFile && it.name.startsWith("source_") }
-
-                    if (sourceFile != null) {
-                        val lockedDocument = PdfDocumentItem(
+                        val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(cachedFile) }
+                        val document = PdfDocumentItem(
                             id = documentId,
                             fileName = displayName,
-                            fileSizeBytes = sourceFile.length(),
-                            pageCount = 0,
+                            fileSizeBytes = cachedFile.length(),
+                            pageCount = pageCount,
                             sourceUri = uri,
-                            localFile = sourceFile,
-                            accentColor = color,
-                            isEncrypted = true,
-                            isLocked = true
+                            localFile = cachedFile,
+                            accentColor = color
                         )
-                        newDocs.add(lockedDocument)
-                        if (firstLockedDocument == null) firstLockedDocument = lockedDocument
-                    } else {
+                        newDocs.add(document)
+
+                        for (pageIndex in 0 until pageCount) {
+                            newPages.add(
+                                PdfPageItem(
+                                    id = "${documentId}_p$pageIndex",
+                                    documentId = documentId,
+                                    documentName = displayName,
+                                    pageIndex = pageIndex,
+                                    accentColor = color
+                                )
+                            )
+                        }
+                    } catch (e: CancellationException) {
+                        runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+                        throw e
+                    } catch (e: PdfPasswordRequiredException) {
+                        val sourceFile = FileUtil.documentSessionDir(context, documentId)
+                            .listFiles()
+                            ?.firstOrNull { it.isFile && it.name.startsWith("source_") }
+
+                        if (sourceFile != null) {
+                            val lockedDocument = PdfDocumentItem(
+                                id = documentId,
+                                fileName = displayName,
+                                fileSizeBytes = sourceFile.length(),
+                                pageCount = 0,
+                                sourceUri = uri,
+                                localFile = sourceFile,
+                                accentColor = color,
+                                isEncrypted = true,
+                                isLocked = true
+                            )
+                            newDocs.add(lockedDocument)
+                            if (firstLockedDocument == null) firstLockedDocument = lockedDocument
+                        } else {
+                            failedImports.add(displayName)
+                            runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+                        }
+                    } catch (e: Exception) {
                         failedImports.add(displayName)
                         runCatching { FileUtil.deleteDocumentSession(context, documentId) }
                     }
-                } catch (e: Exception) {
-                    failedImports.add(displayName)
-                    runCatching { FileUtil.deleteDocumentSession(context, documentId) }
                 }
-            }
 
-            val notice = buildString {
-                append("Imported ${newDocs.count { !it.isLocked }} PDF document(s)")
-                if (newPages.isNotEmpty()) append(" with ${newPages.size} pages")
-                if (newDocs.any { it.isLocked }) {
-                    append(". ${newDocs.count { it.isLocked }} document(s) need a password")
+                val notice = buildString {
+                    append("Imported ${newDocs.count { !it.isLocked }} PDF document(s)")
+                    if (newPages.isNotEmpty()) append(" with ${newPages.size} pages")
+                    if (newDocs.any { it.isLocked }) {
+                        append(". ${newDocs.count { it.isLocked }} document(s) need a password")
+                    }
+                    if (failedImports.isNotEmpty()) {
+                        append(". ${failedImports.size} file(s) were rejected as unreadable or invalid")
+                    }
+                    append(".")
                 }
-                if (failedImports.isNotEmpty()) {
-                    append(". ${failedImports.size} file(s) were rejected as unreadable or invalid")
-                }
-                append(".")
-            }
 
-            _uiState.update { current ->
-                current.copy(
-                    documents = current.documents + newDocs,
-                    pages = current.pages + newPages,
-                    isProcessing = false,
-                    lockedDocumentPrompt = firstLockedDocument,
-                    userNotice = notice
-                )
+                _uiState.update { current ->
+                    current.copy(
+                        documents = current.documents + newDocs,
+                        pages = current.pages + newPages,
+                        isProcessing = false,
+                        processingMessage = "",
+                        lockedDocumentPrompt = firstLockedDocument,
+                        userNotice = notice
+                    )
+                }
+                calculateCacheSize()
+            } catch (e: CancellationException) {
+                throw e
             }
-            calculateCacheSize()
         }
     }
 
@@ -614,6 +657,9 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun clearAllSessionData(notice: String) {
         mergeJob?.cancel(CancellationException("Session cleared"))
+        importJob?.cancel(CancellationException("Session cleared"))
+        sampleJob?.cancel(CancellationException("Session cleared"))
+        unlockJob?.cancel(CancellationException("Session cleared"))
         thumbnailJobs.values.forEach { it.cancel() }
         thumbnailJobs.clear()
         val context = getApplication<Application>()
@@ -623,6 +669,8 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 pages = emptyList(),
                 securityConfig = PdfSecurityConfig(),
                 mergeState = MergeState.Idle,
+                isProcessing = false,
+                processingMessage = "",
                 previewPage = null,
                 reorderDialogPage = null,
                 lockedDocumentPrompt = null,
