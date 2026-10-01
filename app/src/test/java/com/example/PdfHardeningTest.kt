@@ -258,6 +258,24 @@ class PdfHardeningTest {
         assertTrue(unrelated.exists())
     }
 
+    @Test
+    fun clearOwnedWorkingFilesIncludesGeneratedSamplesButNotUnrelatedCache() {
+        val session = FileUtil.documentSessionDir(context, "doc-cleanup").apply { mkdirs() }
+        File(session, "source.pdf").writeText("temporary")
+
+        val sampleDir = File(context.cacheDir, "sample_pdfs").apply { mkdirs() }
+        File(sampleDir, "sample.pdf").writeText("sample")
+
+        val unrelated = File(context.cacheDir, "unrelated.keep").apply { writeText("keep") }
+
+        FileUtil.clearOwnedWorkingFiles(context)
+
+        assertFalse(session.exists())
+        assertFalse(sampleDir.exists())
+        assertTrue(unrelated.exists())
+        assertEquals(0L, FileUtil.ownedCacheSize(context))
+    }
+
     private fun page(
         documentId: String,
         name: String,

@@ -13,6 +13,7 @@ import java.util.UUID
 object FileUtil {
     private const val SESSION_ROOT = "pdf_sessions"
     private const val THUMBNAIL_ROOT = "pdf_thumbnails"
+    private const val SAMPLE_ROOT = "sample_pdfs"
     private const val MAX_DISPLAY_NAME_LENGTH = 120
 
     fun formatFileSize(bytes: Long): String = when {
@@ -100,7 +101,8 @@ object FileUtil {
 
     fun ownedCacheSize(context: Context): Long = listOf(
         File(context.cacheDir, SESSION_ROOT),
-        File(context.cacheDir, THUMBNAIL_ROOT)
+        File(context.cacheDir, THUMBNAIL_ROOT),
+        File(context.cacheDir, SAMPLE_ROOT)
     ).sumOf(::recursiveSize)
 
     fun deleteDocumentSession(context: Context, documentId: String): Int {
@@ -114,6 +116,7 @@ object FileUtil {
         var removed = 0
         removed += deleteOwnedTree(context.cacheDir, File(context.cacheDir, SESSION_ROOT))
         removed += deleteOwnedTree(context.cacheDir, File(context.cacheDir, THUMBNAIL_ROOT))
+        removed += deleteOwnedTree(context.cacheDir, File(context.cacheDir, SAMPLE_ROOT))
         return removed
     }
 

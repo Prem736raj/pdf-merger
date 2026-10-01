@@ -81,6 +81,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     private val startupCleanup = viewModelScope.async(Dispatchers.IO) {
         val context = getApplication<Application>()
         runCatching { FileUtil.clearOwnedWorkingFiles(context) }
+        runCatching { FileUtil.clearPrivateMergedOutputs(context) }
         PdfThumbnailHelper.clearMemoryCache()
     }
 
