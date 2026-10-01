@@ -518,7 +518,6 @@ fun MainScreen(
                 AppTab.PAGES -> {
                     PagesGridTab(
                         pages = uiState.pages,
-                        onReorderPage = { from, to -> viewModel.reorderPage(from, to) },
                         onMovePageDelta = { pageId, delta -> viewModel.movePageDelta(pageId, delta) },
                         onRotatePageClockwise = { pageId -> viewModel.rotatePageClockwise(pageId) },
                         onRotatePageCounterClockwise = { pageId -> viewModel.rotatePageCounterClockwise(pageId) },
