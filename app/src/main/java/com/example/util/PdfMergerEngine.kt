@@ -152,8 +152,13 @@ object PdfMergerEngine {
                     throw PdfMergeConsistencyException("Source file no longer exists: ${file.name}")
                 }
                 val sourceDocument = loadDocumentSafely(file, passwordsMap[documentId])
-                validateSourceFidelity(sourceDocument, file.name)
-                openedSourceDocs[documentId] = sourceDocument
+                try {
+                    validateSourceFidelity(sourceDocument, file.name)
+                    openedSourceDocs[documentId] = sourceDocument
+                } catch (e: Exception) {
+                    runCatching { sourceDocument.close() }
+                    throw e
+                }
             }
 
             mergedDoc = PDDocument()
