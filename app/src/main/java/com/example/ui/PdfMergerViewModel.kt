@@ -657,11 +657,15 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     private fun clearAllSessionData(notice: String) {
-        mergeJob?.cancel(CancellationException("Session cleared"))
-        importJob?.cancel(CancellationException("Session cleared"))
-        sampleJob?.cancel(CancellationException("Session cleared"))
-        unlockJob?.cancel(CancellationException("Session cleared"))
-        thumbnailJobs.values.forEach { it.cancel() }
+        val jobsToAwait = buildList {
+            mergeJob?.let(::add)
+            importJob?.let(::add)
+            sampleJob?.let(::add)
+            unlockJob?.let(::add)
+            addAll(thumbnailJobs.values)
+        }
+        val clearCause = CancellationException("Session cleared")
+        jobsToAwait.forEach { it.cancel(clearCause) }
         thumbnailJobs.clear()
         val context = getApplication<Application>()
         _uiState.update {
@@ -686,6 +690,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         sessionCleanupJob = viewModelScope.launch(Dispatchers.IO) {
             startupCleanup.await()
             previousCleanup?.join()
+            jobsToAwait.forEach { it.join() }
             runCatching { FileUtil.clearOwnedWorkingFiles(context) }
             runCatching { FileUtil.clearPrivateMergedOutputs(context) }
             PdfThumbnailHelper.clearMemoryCache()
