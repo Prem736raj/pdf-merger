@@ -375,7 +375,7 @@ object PdfMergerEngine {
 
     private fun memoryUsageFor(file: File): MemoryUsageSetting {
         return MemoryUsageSetting.setupMixed(PDFBOX_MAIN_MEMORY_BUDGET_BYTES).apply {
-            file.parentFile?.takeIf { it.exists() && it.isDirectory }?.let(::setTempDir)
+            file.parentFile?.takeIf { it.exists() && it.isDirectory }?.let { setTempDir(it) }
         }
     }
 
