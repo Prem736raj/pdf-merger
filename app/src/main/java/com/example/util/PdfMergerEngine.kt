@@ -173,6 +173,14 @@ object PdfMergerEngine {
 
                 val originalPage = sourceDoc.getPage(pageItem.pageIndex)
                 val importedPage = mergedDoc.importPage(originalPage)
+
+                // PDFBox importPage() copies page-local resources, but intentionally omits
+                // resources inherited from the source page tree. Materialize inherited
+                // resources on the imported page so fonts/images/operators remain resolvable.
+                if (!originalPage.cosObject.containsKey(COSName.RESOURCES) && originalPage.resources != null) {
+                    importedPage.resources = originalPage.resources
+                }
+
                 val normalizedRotation = ((pageItem.rotationDegrees % 360) + 360) % 360
                 if (normalizedRotation != 0) {
                     importedPage.rotation = ((importedPage.rotation + normalizedRotation) % 360 + 360) % 360
