@@ -266,13 +266,13 @@ fun AppSettingsDialog(
                             ) {
                                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text(
-                                        text = "Direct Auto-Save",
+                                        text = "Automatic Save",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Directly download to default folder without asking location every time.",
+                                        text = "Save automatically to the configured destination when Android and the provider allow it; otherwise ask for a location.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.5.sp

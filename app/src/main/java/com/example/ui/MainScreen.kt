@@ -863,10 +863,10 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
 
                         Text(
                             text = "1. Batch Import: Select multiple PDF files at once, or use 'Open with / Share' from any Android file manager or messaging app.\n\n" +
-                                    "2. Page Drag & Drop: Drag page sequence badges (#1, #2...) or long-press cards to visually organize the final document sequence.\n\n" +
+                                    "2. Page Reorder: Use the arrow controls, swipe a page-number badge one step, or tap the badge to move a page to an exact position.\n\n" +
                                     "3. Per-Page Rotation: Rotate individual pages 90° clockwise or counter-clockwise.\n\n" +
                                     "4. PDF Security: Apply password protection and PDF permission restrictions, then verify the saved protection state before success.\n\n" +
-                                    "5. Direct Downloads: Automatically save directly to your Downloads/PDF_Merger folder or choose a custom folder.",
+                                    "5. Export: Android 10+ can auto-save to Downloads/PDF_Merger; a custom SAF folder can be retained when the provider grants persistent access. Older Android versions use the system save picker.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
