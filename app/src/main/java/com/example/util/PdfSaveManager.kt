@@ -52,7 +52,11 @@ object PdfSaveManager {
         return when (prefs.getString(KEY_SAVE_MODE, MODE_DEFAULT_DOWNLOADS)) {
             MODE_CUSTOM_FOLDER -> prefs.getString(KEY_CUSTOM_FOLDER_NAME, null) ?: "Chosen Folder"
             MODE_ALWAYS_ASK -> "Ask every time"
-            else -> "Downloads / PDF_Merger"
+            else -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                "Downloads / PDF_Merger"
+            } else {
+                "Choose location when saving"
+            }
         }
     }
 
@@ -60,13 +64,17 @@ object PdfSaveManager {
         val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
         return try {
             context.contentResolver.takePersistableUriPermission(treeUri, flags)
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                .edit()
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val previousTree = prefs.getString(KEY_CUSTOM_TREE_URI, null)
+            prefs.edit()
                 .putString(KEY_SAVE_MODE, MODE_CUSTOM_FOLDER)
                 .putString(KEY_CUSTOM_TREE_URI, treeUri.toString())
                 .putString(KEY_CUSTOM_FOLDER_NAME, folderName ?: "Selected Folder")
                 .putBoolean(KEY_AUTO_SAVE_ENABLED, true)
                 .apply()
+            if (previousTree != null && previousTree != treeUri.toString()) {
+                releaseTreePermission(context, Uri.parse(previousTree))
+            }
             true
         } catch (e: Exception) {
             Log.w(TAG, "Could not persist custom-folder permission: ${e.message}")
@@ -75,8 +83,9 @@ object PdfSaveManager {
     }
 
     fun resetToDefaultDownloads(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.getString(KEY_CUSTOM_TREE_URI, null)?.let { releaseTreePermission(context, Uri.parse(it)) }
+        prefs.edit()
             .putString(KEY_SAVE_MODE, MODE_DEFAULT_DOWNLOADS)
             .remove(KEY_CUSTOM_TREE_URI)
             .remove(KEY_CUSTOM_FOLDER_NAME)
@@ -85,8 +94,22 @@ object PdfSaveManager {
     }
 
     fun setModeAlwaysAsk(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit().putString(KEY_SAVE_MODE, MODE_ALWAYS_ASK).apply()
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.getString(KEY_CUSTOM_TREE_URI, null)?.let { releaseTreePermission(context, Uri.parse(it)) }
+        prefs.edit()
+            .putString(KEY_SAVE_MODE, MODE_ALWAYS_ASK)
+            .remove(KEY_CUSTOM_TREE_URI)
+            .remove(KEY_CUSTOM_FOLDER_NAME)
+            .apply()
+    }
+
+    private fun releaseTreePermission(context: Context, treeUri: Uri) {
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        runCatching {
+            context.contentResolver.releasePersistableUriPermission(treeUri, flags)
+        }.onFailure {
+            Log.w(TAG, "Could not release persisted folder permission: ${it.message}")
+        }
     }
 
     suspend fun saveMergedPdfDirectly(

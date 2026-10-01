@@ -143,7 +143,8 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         val context = getApplication<Application>()
         PdfSaveManager.resetToDefaultDownloads(context)
         refreshSaveDestination()
-        _uiState.update { it.copy(userNotice = "Save location reset to Downloads / PDF_Merger") }
+        val displayName = PdfSaveManager.getDestinationDisplayName(context)
+        _uiState.update { it.copy(userNotice = "Save location reset to $displayName.") }
     }
 
     fun refreshSaveDestination() {
