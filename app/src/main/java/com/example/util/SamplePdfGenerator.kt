@@ -119,11 +119,11 @@ object SamplePdfGenerator {
                 canvas.drawLine(60f, 205f, pageWidth - 60f, 205f, linePaint)
 
                 val bulletPoints = listOf(
-                    "• Secure digital document processing with end-to-end local encryption.",
+                    "• Local PDF processing sample content for merge and page-order testing.",
                     "• Batch merging supports combining varied page layouts and custom dimensions.",
-                    "• Granular permission locks for printing, text extraction, and annotations.",
+                    "• Optional PDF permission flags can be configured on generated output.",
                     "• Visual thumbnail management with seamless drag-and-drop page reordering.",
-                    "• On-device PDF rendering with zero server data leakage or transmission."
+                    "• Generated fixture content is processed by the app on-device."
                 )
 
                 var yOffset = 230f
@@ -142,8 +142,8 @@ object SamplePdfGenerator {
                 val tableRows = listOf(
                     "Document Name: $fileName",
                     "Source Origin: Internal Sample Generation",
-                    "Encryption Standard: AES 128-bit / Standard Protection Policy",
-                    "Integrity Check: Verified SHA-256 Digest",
+                    "Protection State: Fixture is unprotected until export settings are applied",
+                    "Integrity Check: Not asserted by this generated fixture",
                     "Timestamp: 2026-09-30 (Confidential Copy)"
                 )
 
