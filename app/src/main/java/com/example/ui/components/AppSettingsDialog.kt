@@ -491,29 +491,29 @@ fun AppSettingsDialog(
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Data Collection",
-                            description = "We don't collect, track, or share your documents, passwords, or personal details."
+                            title = "Local PDF Processing",
+                            description = "PDF merge operations run locally. Files leave the app only when you explicitly save or share them."
                         )
 
                         SimplePrivacyItem(
-                            title = "100% Offline Processing",
-                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
+                            title = "No Network Permission",
+                            description = "The app does not request Android's INTERNET permission and has no cloud PDF-processing dependency."
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Storage Risk",
-                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
+                            title = "Scoped File Access",
+                            description = "PDFs are imported through Android's document/intent APIs without broad storage permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Instant Cleanup",
-                            description = "Temporary cache files created during assembly are deleted immediately."
+                            title = "Private File Lifecycle",
+                            description = "Clear All / Clear Cache removes active working copies, thumbnails, passwords, and the app-private merged copy."
                         )
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         Text(
-                            text = "Version 1.0.0 • 100% Offline & Secure",
+                            text = "Version 1.0.0 • Local PDF processing",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
