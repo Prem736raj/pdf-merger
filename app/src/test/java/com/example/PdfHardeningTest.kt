@@ -244,7 +244,7 @@ class PdfHardeningTest {
             val note = PDAnnotationText().apply {
                 rectangle = PDRectangle(310f, 690f, 24f, 24f)
                 contents = "PDF_NOTE_ANNOTATION_8675309"
-                name = PDAnnotationText.NAME_NOTE
+                setName(PDAnnotationText.NAME_NOTE)
             }
             page.annotations.add(link)
             page.annotations.add(note)
