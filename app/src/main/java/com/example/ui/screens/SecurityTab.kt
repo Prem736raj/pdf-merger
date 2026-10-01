@@ -207,7 +207,7 @@ fun SecurityTab(
             }
         }
 
-        // Big Primary Merge & Download Button
+        // Primary merge operation. Saving is reported only after the external write succeeds.
         Button(
             onClick = onStartMerge,
             enabled = pages.isNotEmpty(),
@@ -221,13 +221,13 @@ fun SecurityTab(
             )
         ) {
             Icon(
-                imageVector = if (securityConfig.isEnabled) Icons.Default.Lock else Icons.Default.Download,
+                imageVector = if (securityConfig.isEnabled) Icons.Default.Lock else Icons.Default.Description,
                 contentDescription = null,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(modifier = Modifier.width(12.dp))
             Text(
-                text = "Merge & Download (${pages.size} Pages)",
+                text = "Merge PDF (${pages.size} Pages)",
                 fontSize = 16.sp,
                 fontWeight = FontWeight.Bold
             )
