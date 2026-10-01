@@ -1,8 +1,8 @@
 # PDF Merger
 
-PDF Merger is a native Android utility for combining PDF pages, reordering and rotating pages, previewing documents, and optionally applying password protection to the generated PDF.
+PDF Merger is a native Android utility for combining PDF pages, reordering and rotating pages, previewing documents, and optionally applying password protection to generated PDFs.
 
-The production-hardening branch prioritizes PDF correctness, local processing, storage safety, and truthful security state over cosmetic changes.
+The production-hardening branch prioritizes PDF correctness, local processing, storage safety, fidelity, and truthful security state over cosmetic changes.
 
 ## Architecture
 
@@ -14,45 +14,56 @@ MainActivity
      -> PdfSaveManager (MediaStore / Storage Access Framework)
 ```
 
-Imported working copies and thumbnails are stored only in app-owned cache directories scoped by document ID. Generated PDFs are created under the app-private `filesDir/merged_pdfs` directory until the user saves, opens, shares, or clears the session.
+Imported working copies and thumbnails live in app-owned cache directories scoped by document ID. Generated PDFs are created under app-private `filesDir/merged_pdfs` until the user explicitly saves, opens, shares, or clears the session.
 
 ## Current behavior
 
 - Multi-PDF import from the system picker and incoming PDF intents
-- Page preview, reorder, duplicate, delete, reverse, and rotation controls
+- Page preview, deterministic reorder controls, duplicate, delete, reverse, and rotation
+- Lazy/on-demand page-thumbnail generation
 - PDFBox-first vector page merge
-- Post-save validation of page count and encryption state
+- Exact output page-count verification after save
 - Optional user/owner passwords and PDF permission flags
 - MediaStore save to `Downloads/PDF_Merger` on Android 10+
 - SAF custom-folder and Save As flows
-- SAF picker fallback on Android 7-9 instead of broad storage permissions
+- SAF picker on Android 7-9 instead of broad storage permissions
 - FileProvider sharing limited to app-private merged PDFs
+- Cooperative merge cancellation between pages
 - Light, dark, and system theme modes
 
 ## Security and privacy model
 
-PDF processing is local to the app. The manifest does not request the `INTERNET` permission, and the project has no Firebase, Retrofit, OkHttp, Room, Gemini, or other cloud-processing stack.
+PDF processing is local to the app. The manifest does not request the `INTERNET` permission, and the project has no Firebase, Retrofit, OkHttp, Room, Gemini, analytics, or other cloud-processing stack.
 
-When output protection is requested, the merge is treated as failed unless the saved PDF can be reopened and its encrypted state and requested permission flags can be verified. The UI reports verified output state rather than the state of the security toggle.
+Protected export is fail-closed: if requested PDF protection cannot be applied and verified, export fails. The saved PDF is reopened and checked for page count, encrypted state, configured password behavior, and permission flags before the UI can report success.
 
-The app configures PDFBox `StandardProtectionPolicy` with a 128-bit key length. This repository intentionally does **not** label that output “AES-128” until the generated encryption dictionary is independently verified on device/tooling. PDF permission flags are advisory and depend on the PDF reader enforcing them.
+Generated protected output is independently checked in CI with qpdf. The generated fixture verifies the Standard security handler with `/V=4`, `/R=4`, `/Length=128`, and `/CFM=/AESV2`; this is an AES-128 output profile. PDF permission flags remain advisory because enforcement depends on the PDF reader.
 
-Imported working files, unlocked working copies, thumbnails, output passwords, and app-private merged output are cleared by Clear All / Clear Cache. App-private merged PDFs are excluded from Android cloud backup and device-transfer backup rules. Files explicitly exported or shared by the user are outside the app’s private-storage lifecycle.
+Imported working files, unlocked working copies, thumbnails, output-password state, and app-private merged output are cleared by Remove Document / Clear All / Clear Cache as applicable. App-private merged PDFs are excluded from Android cloud backup and device-transfer rules. Files explicitly exported or shared by the user are outside the app-private lifecycle.
 
 ## Fidelity policy
 
-The normal merge path imports PDF pages with PDFBox and is intended to preserve PDF structure rather than rasterize pages.
+The normal merge path imports pages with PDFBox and does not silently rasterize them. Automatic PdfRenderer/Bitmap fallback is disabled because rasterization can destroy searchable text, vectors, links, annotations, forms, accessibility information, and signatures.
 
-Automatic PdfRenderer/Bitmap fallback is disabled on the hardening branch because rasterization can destroy searchable text, vectors, links, annotations, forms, accessibility information, and signatures. A compatibility/raster mode should only be reintroduced as an explicit user-visible mode after dedicated regression testing.
+Generated regression fixtures currently verify:
 
-Not yet claimed as preserved without further fixture/device verification:
+- exact requested page order and count
+- searchable/selectable text survival on the vector path
+- external URI link annotation preservation
+- text-note annotation preservation
+- 0°, 90°, 180°, and 270° page rotation
+- MediaBox and CropBox preservation across those rotations
+- inherited page resources are materialized when PDFBox page import would otherwise omit them
+- protected-output password/encryption/permission verification
 
-- AcroForms
-- document outlines/bookmarks
-- digital signatures
+Not claimed as preserved without further dedicated testing:
+
+- AcroForms and document-level form structure
+- outlines/bookmarks
+- source digital-signature validity in the newly generated PDF
 - all annotation subtypes
 - tagged-PDF accessibility structure
-- every encrypted or malformed third-party PDF variant
+- every encrypted, malformed, or pathological third-party PDF variant
 
 ## Build
 
@@ -62,16 +73,17 @@ Requirements:
 - Android SDK / compile SDK 36.1
 - Android device or emulator API 24+
 
+The Gradle 9.3.1 wrapper is fully committed. CI verifies the wrapper instead of repairing it, so a broken clean clone fails visibly.
+
 From a clean clone:
 
 ```bash
 ./gradlew clean
 ./gradlew testDebugUnitTest
 ./gradlew lintDebug
+./gradlew lintRelease
 ./gradlew assembleDebug
 ```
-
-CI runs the debug unit-test, lint, and assemble gates on pushes and pull requests.
 
 Release signing is deliberately not committed. Signed release artifacts require:
 
@@ -79,37 +91,38 @@ Release signing is deliberately not committed. Signed release artifacts require:
 - `STORE_PASSWORD`
 - `KEY_PASSWORD`
 
-The configured release key alias is `upload`.
+The configured release key alias is `upload`. `assembleRelease` and `bundleRelease` intentionally fail validation without real production signing configuration.
 
-## Tests
+## Automated verification
 
-The hardening test suite covers:
+Current hardening CI covers:
 
-- exact page order
-- searchable text survival on the vector path
-- protected-output reopen/verification
-- wrong-password rejection
-- rejection of malformed PDF page counts
-- failure on invalid requested page indexes
-- scoped recursive session cleanup
+- committed wrapper bootstrap
+- meaningful PDF/security/privacy unit tests
+- independent qpdf encryption-dictionary verification
+- `lintDebug`
+- `lintRelease`
+- `assembleDebug`
 
-Additional device-level coverage is still required for storage providers, Android 24/28/29/33+, large documents, forms, annotations, links, rotations across mixed page boxes, and independent encryption-dictionary verification.
+## Remaining release gates
 
-## Release limitations
+The following remain verification items, not marketing claims:
 
-The following are release-verification items, not marketing claims:
-
-- Exact output cipher / crypt-filter identity still requires independent inspection (for example with qpdf or equivalent tooling).
-- Large-document performance at 500-1,000 pages has not yet been benchmarked on representative devices.
-- R8/minification remains disabled until PDFBox/crypto regression coverage passes on release builds.
-- The production application ID must not be changed until Play Console ownership/history is checked.
-- PDF permission restrictions cannot guarantee that every third-party reader will enforce them.
+- Android 24/28/29/33+/current-device storage-provider matrix
+- custom-folder revocation/offline/removable-storage behavior on real providers
+- 10/100/500/1,000-page and large-scan performance benchmarks
+- heap/GC behavior for rapid high-resolution preview usage
+- TalkBack, 1.3x/1.5x/2.0x font scale, contrast, landscape, and tablet checks
+- AcroForm/bookmark/tagged-PDF/signature behavior
+- major third-party reader permission behavior
+- Play Console application-ID history before changing `com.aistudio.pdfmerger.vqznrk`
+- signed `assembleRelease` / `bundleRelease` and R8 qualification
 
 ## Key source files
 
-- `PdfMergerEngine.kt` — vector merge, password handling, output protection, verification
+- `PdfMergerEngine.kt` — vector merge, page fidelity, password handling, output protection, verification
 - `FileUtil.kt` — URI working-copy validation and private-file lifecycle
-- `PdfThumbnailHelper.kt` — thumbnails and preview bitmap cache
-- `PdfSaveManager.kt` — MediaStore / SAF export
-- `PdfMergerViewModel.kt` — UI state and orchestration
+- `PdfThumbnailHelper.kt` — lazy thumbnails and bounded preview bitmap cache
+- `PdfSaveManager.kt` — transactional MediaStore / SAF export
+- `PdfMergerViewModel.kt` — UI state, lazy thumbnail orchestration, cancellation
 - `AUDIT_FINDINGS.md` — production-hardening evidence ledger
