@@ -120,6 +120,56 @@ class PdfHardeningTest {
     }
 
     @Test
+    fun enabledSecurityWithoutAnyPasswordFailsClosed() = runBlocking {
+        val source = createTextPdf("no-password-security.pdf", listOf("NO_PASSWORD_SECURITY"))
+        val result = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("no-password", "No password", 0)),
+            sourceFilesMap = mapOf("no-password" to source),
+            securityConfig = PdfSecurityConfig(isEnabled = true),
+            customOutputName = "must-fail-security",
+            onProgress = { _, _ -> }
+        )
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is com.example.util.PdfSecurityException)
+    }
+
+    @Test
+    fun ownerOnlySecurityDoesNotClaimOpenPassword() = runBlocking {
+        val source = createTextPdf("owner-only.pdf", listOf("OWNER_ONLY_SECURITY"))
+        val config = PdfSecurityConfig(
+            isEnabled = true,
+            ownerPassword = "Owner-Only-Password-77",
+            restrictPrinting = true,
+            restrictModifying = true,
+            restrictCopyingText = true,
+            restrictAddingAnnotations = true
+        )
+
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("owner-only", "Owner only", 0)),
+            sourceFilesMap = mapOf("owner-only" to source),
+            securityConfig = config,
+            customOutputName = "owner-only-output",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        assertTrue(output.verification.isEncrypted)
+        assertFalse(output.verification.userPasswordAccepted)
+        assertTrue(output.verification.ownerPasswordAccepted)
+
+        PDDocument.load(output.file).use { openedWithoutPassword ->
+            assertTrue(openedWithoutPassword.isEncrypted)
+            assertFalse(openedWithoutPassword.currentAccessPermission.isOwnerPermission)
+        }
+        PDDocument.load(output.file, config.ownerPassword).use { ownerDocument ->
+            assertTrue(ownerDocument.currentAccessPermission.isOwnerPermission)
+        }
+    }
+
+    @Test
     fun vectorMergePreservesUriLinkAndTextAnnotation() = runBlocking {
         val source = createAnnotatedPdf("annotations.pdf")
         val output = PdfMergerEngine.mergePdfPages(
