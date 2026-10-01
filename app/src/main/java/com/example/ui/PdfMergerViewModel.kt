@@ -78,6 +78,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
     private val thumbnailJobs = mutableMapOf<String, Job>()
     private var mergeJob: Job? = null
+    private var sessionCleanupJob: Job? = null
     private val startupCleanup = viewModelScope.async(Dispatchers.IO) {
         val context = getApplication<Application>()
         runCatching { FileUtil.clearOwnedWorkingFiles(context) }
@@ -117,9 +118,14 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(themeMode = mode) }
     }
 
+    private suspend fun awaitSessionStorageReady() {
+        startupCleanup.await()
+        sessionCleanupJob?.join()
+    }
+
     fun calculateCacheSize() {
         viewModelScope.launch(Dispatchers.IO) {
-            startupCleanup.await()
+            awaitSessionStorageReady()
             val context = getApplication<Application>()
             val size = FileUtil.ownedCacheSize(context)
             _uiState.update { it.copy(cacheSizeBytes = size) }
@@ -245,7 +251,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadSampleDocuments() {
         viewModelScope.launch {
-            startupCleanup.await()
+            awaitSessionStorageReady()
             _uiState.update {
                 it.copy(
                     isProcessing = true,
@@ -319,7 +325,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
-            startupCleanup.await()
+            awaitSessionStorageReady()
             val context = getApplication<Application>()
             val newDocs = mutableListOf<PdfDocumentItem>()
             val newPages = mutableListOf<PdfPageItem>()
@@ -627,7 +633,10 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 userNotice = notice
             )
         }
-        viewModelScope.launch(Dispatchers.IO) {
+        val previousCleanup = sessionCleanupJob
+        sessionCleanupJob = viewModelScope.launch(Dispatchers.IO) {
+            startupCleanup.await()
+            previousCleanup?.join()
             runCatching { FileUtil.clearOwnedWorkingFiles(context) }
             runCatching { FileUtil.clearPrivateMergedOutputs(context) }
             PdfThumbnailHelper.clearMemoryCache()
