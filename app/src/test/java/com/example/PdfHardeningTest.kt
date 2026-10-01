@@ -11,12 +11,17 @@ import com.example.util.PdfMergerEngine
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.PDPage
 import com.tom_roush.pdfbox.pdmodel.PDPageContentStream
+import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
+import com.tom_roush.pdfbox.pdmodel.interactive.action.PDActionURI
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+import com.tom_roush.pdfbox.pdmodel.interactive.annotation.PDAnnotationText
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -109,6 +114,61 @@ class PdfHardeningTest {
             assertEquals(1, document.numberOfPages)
             assertTrue(document.isEncrypted)
         }
+
+        val fixtureDir = File(System.getProperty("user.dir"), "build/qpdf-fixtures").apply { mkdirs() }
+        output.file.copyTo(File(fixtureDir, "protected-aes128.pdf"), overwrite = true)
+    }
+
+    @Test
+    fun vectorMergePreservesUriLinkAndTextAnnotation() = runBlocking {
+        val source = createAnnotatedPdf("annotations.pdf")
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = listOf(page("annotated", "Annotated", 0)),
+            sourceFilesMap = mapOf("annotated" to source),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "annotation-preservation",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        PDDocument.load(output.file).use { document ->
+            val annotations = document.getPage(0).annotations
+            val link = annotations.filterIsInstance<PDAnnotationLink>().singleOrNull()
+            assertNotNull(link)
+            val action = link!!.action as? PDActionURI
+            assertNotNull(action)
+            assertEquals("https://example.invalid/pdf-merger-link-test", action!!.uri)
+
+            val note = annotations.filterIsInstance<PDAnnotationText>().singleOrNull()
+            assertNotNull(note)
+            assertEquals("PDF_NOTE_ANNOTATION_8675309", note!!.contents)
+        }
+    }
+
+    @Test
+    fun rotationsPreserveMediaAndCropBoxes() = runBlocking {
+        val source = createBoxPdf("boxes.pdf")
+        val rotations = listOf(0, 90, 180, 270)
+        val output = PdfMergerEngine.mergePdfPages(
+            context = context,
+            orderedPages = rotations.mapIndexed { index, rotation ->
+                page("boxes", "Boxes", 0, rotation, "boxes_$index")
+            },
+            sourceFilesMap = mapOf("boxes" to source),
+            securityConfig = PdfSecurityConfig(),
+            customOutputName = "rotation-boxes",
+            onProgress = { _, _ -> }
+        ).getOrThrow()
+
+        PDDocument.load(output.file).use { document ->
+            assertEquals(rotations.size, document.numberOfPages)
+            rotations.forEachIndexed { index, rotation ->
+                val mergedPage = document.getPage(index)
+                assertEquals(rotation, mergedPage.rotation)
+                assertRectangleEquals(PDRectangle(300f, 500f), mergedPage.mediaBox)
+                assertRectangleEquals(PDRectangle(10f, 20f, 280f, 460f), mergedPage.cropBox)
+            }
+        }
     }
 
     @Test
@@ -146,14 +206,78 @@ class PdfHardeningTest {
         assertTrue(unrelated.exists())
     }
 
-    private fun page(documentId: String, name: String, index: Int): PdfPageItem =
+    private fun page(
+        documentId: String,
+        name: String,
+        index: Int,
+        rotation: Int = 0,
+        id: String = "${documentId}_p$index"
+    ): PdfPageItem =
         PdfPageItem(
-            id = "${documentId}_p$index",
+            id = id,
             documentId = documentId,
             documentName = name,
             pageIndex = index,
+            rotationDegrees = rotation,
             accentColor = Color.Black
         )
+
+    private fun createAnnotatedPdf(name: String): File {
+        val file = File(root, name)
+        PDDocument().use { document ->
+            val page = PDPage(PDRectangle.LETTER)
+            document.addPage(page)
+            PDPageContentStream(document, page).use { stream ->
+                stream.beginText()
+                stream.setFont(PDType1Font.HELVETICA, 12f)
+                stream.newLineAtOffset(72f, 720f)
+                stream.showText("ANNOTATION_LINK_FIXTURE")
+                stream.endText()
+            }
+
+            val link = PDAnnotationLink().apply {
+                rectangle = PDRectangle(72f, 690f, 220f, 24f)
+                action = PDActionURI().apply {
+                    uri = "https://example.invalid/pdf-merger-link-test"
+                }
+            }
+            val note = PDAnnotationText().apply {
+                rectangle = PDRectangle(310f, 690f, 24f, 24f)
+                contents = "PDF_NOTE_ANNOTATION_8675309"
+                name = PDAnnotationText.NAME_NOTE
+            }
+            page.annotations.add(link)
+            page.annotations.add(note)
+            document.save(file)
+        }
+        return file
+    }
+
+    private fun createBoxPdf(name: String): File {
+        val file = File(root, name)
+        PDDocument().use { document ->
+            val page = PDPage(PDRectangle(300f, 500f)).apply {
+                cropBox = PDRectangle(10f, 20f, 280f, 460f)
+            }
+            document.addPage(page)
+            PDPageContentStream(document, page).use { stream ->
+                stream.beginText()
+                stream.setFont(PDType1Font.HELVETICA, 12f)
+                stream.newLineAtOffset(40f, 450f)
+                stream.showText("ROTATION_BOX_FIXTURE")
+                stream.endText()
+            }
+            document.save(file)
+        }
+        return file
+    }
+
+    private fun assertRectangleEquals(expected: PDRectangle, actual: PDRectangle) {
+        assertEquals(expected.lowerLeftX, actual.lowerLeftX, 0.01f)
+        assertEquals(expected.lowerLeftY, actual.lowerLeftY, 0.01f)
+        assertEquals(expected.width, actual.width, 0.01f)
+        assertEquals(expected.height, actual.height, 0.01f)
+    }
 
     private fun createTextPdf(name: String, markers: List<String>): File {
         val file = File(root, name)
