@@ -69,7 +69,7 @@ Automatic raster fallback is disabled on the hardening branch because it is not 
 
 | ID | Priority | Area | Exact file | Function / location | Evidence | Impact | Fix | Verification | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| PDF-001 | P0 | Build | repo root / `gradle/wrapper` | wrapper files | Baseline had only `gradle-wrapper.properties`; no scripts/JAR | clean clone not reproducible | CI bootstrap prepared; wrapper must be committed | clean clone + CI | IN_PROGRESS |
+| PDF-001 | P0 | Build | repo root / `gradle/wrapper` | wrapper files | Baseline had only `gradle-wrapper.properties`; no scripts/JAR | clean clone not reproducible | restored Gradle 9.3.1 scripts and wrapper JAR in `1203bbb6...` | clean clone + CI | FIXED |
 | PDF-002 | P0 | Security | `PdfMergerEngine.kt` | output protection | baseline swallowed protection exceptions | requested protected output could become unprotected | protection errors fail export; post-save reopen verifies encryption/flags | `PdfHardeningTest.protectedExportIsReopenedAndVerified` | FIXED |
 | PDF-003 | P0 | UI security truth | ViewModel / success dialog | merge success | baseline used requested config as verified state | UI could claim protected when unprotected | success metadata comes from `PdfVerificationResult` | unit suite + source inspection | FIXED |
 | PDF-004 | P1 | PDF input | `FileUtil.kt` | `getPdfPageCount` | baseline returned 1 after parser failures | corrupt input became fake one-page PDF | parser failure now propagates typed invalid-document error | malformed regression test | FIXED |
@@ -146,7 +146,7 @@ Scores reflect current branch evidence, not intended feature names.
 
 | Area | Score / 10 | Note |
 | --- | ---: | --- |
-| Build reproducibility | 7 | wrapper commit still being finalized |
+| Build reproducibility | 9 | complete Gradle 9.3.1 wrapper committed; final CI gate remains |
 | PDF import | 7 | typed validation; device URI matrix pending |
 | PDF validity | 8 | header + parser + output reopen |
 | Merge correctness | 9 | page order/count regression |
@@ -203,6 +203,8 @@ Scores reflect current branch evidence, not intended feature names.
 - Early hardening CI initially hit an external 504 while fetching Kotlin compiler artifacts; not a source failure.
 - `d77e893c...`: debug unit tests, lint, and assemble passed.
 - `008f6acd...`: unit tests passed; lint exposed an API-24 `File.toPath()` incompatibility introduced by hardening. That issue is fixed by `d819d23f...` using canonical path strings.
+- `1203bbb6...`: complete Gradle 9.3.1 wrapper scripts/JAR committed by CI bootstrap.
+- `d819d23f...`: core hardening tests passed; lint then identified the guarded MediaStore Downloads helper as missing an explicit API-29 contract. `871d3017...` adds `@RequiresApi(29)` to that isolated path.
 - Final-head CI must be green before merge recommendation.
 
 ## Release decision
