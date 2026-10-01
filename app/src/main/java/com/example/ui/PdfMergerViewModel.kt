@@ -19,6 +19,7 @@ import com.example.util.SamplePdfGenerator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -77,6 +78,11 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
     private val thumbnailJobs = mutableMapOf<String, Job>()
     private var mergeJob: Job? = null
+    private val startupCleanup = viewModelScope.async(Dispatchers.IO) {
+        val context = getApplication<Application>()
+        runCatching { FileUtil.clearOwnedWorkingFiles(context) }
+        PdfThumbnailHelper.clearMemoryCache()
+    }
 
     private val documentColorPalette = listOf(
         Color(0xFF4F46E5), // Indigo
@@ -112,6 +118,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun calculateCacheSize() {
         viewModelScope.launch(Dispatchers.IO) {
+            startupCleanup.await()
             val context = getApplication<Application>()
             val size = FileUtil.ownedCacheSize(context)
             _uiState.update { it.copy(cacheSizeBytes = size) }
@@ -237,6 +244,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun loadSampleDocuments() {
         viewModelScope.launch {
+            startupCleanup.await()
             _uiState.update {
                 it.copy(
                     isProcessing = true,
@@ -310,6 +318,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
+            startupCleanup.await()
             val context = getApplication<Application>()
             val newDocs = mutableListOf<PdfDocumentItem>()
             val newPages = mutableListOf<PdfPageItem>()
