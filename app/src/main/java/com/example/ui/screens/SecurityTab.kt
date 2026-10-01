@@ -210,7 +210,8 @@ fun SecurityTab(
         // Primary merge operation. Saving is reported only after the external write succeeds.
         Button(
             onClick = onStartMerge,
-            enabled = pages.isNotEmpty(),
+            enabled = pages.isNotEmpty() &&
+                (!securityConfig.isEnabled || securityConfig.isPasswordConfigured),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp)

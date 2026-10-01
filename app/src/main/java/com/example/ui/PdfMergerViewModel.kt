@@ -692,7 +692,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                                     destUri = saveResult.destinationUri,
                                     destDisplay = saveResult.displayPath,
                                     shouldTriggerPicker = false,
-                                    notice = "Successfully merged and downloaded directly to ${saveResult.displayPath}!"
+                                    notice = "Merged and saved to ${saveResult.displayPath}."
                                 )
                             }
                             is PdfSaveManager.SaveResult.RequiresPicker -> {
@@ -782,7 +782,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     fun downloadOrOpenMergedPdf(context: android.content.Context, onRequirePicker: (String) -> Unit) {
         val file = _uiState.value.lastMergedFile
         if (file == null || !file.exists()) {
-            _uiState.update { it.copy(userNotice = "No merged PDF available yet. Please click 'Merge & Download' first.") }
+            _uiState.update { it.copy(userNotice = "No merged PDF is available yet. Merge the selected pages first.") }
             return
         }
 
@@ -799,7 +799,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(
                             lastSavedDestinationUri = saveResult.destinationUri,
                             lastSavedPathDisplay = saveResult.displayPath,
-                            userNotice = "Downloaded directly to ${saveResult.displayPath}!"
+                            userNotice = "Saved to ${saveResult.displayPath}."
                         )
                     }
                     // Also prompt to open

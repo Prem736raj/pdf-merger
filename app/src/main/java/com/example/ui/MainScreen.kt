@@ -365,7 +365,11 @@ fun MainScreen(
                                             )
                                             Spacer(modifier = Modifier.width(3.dp))
                                             Text(
-                                                text = if (uiState.securityConfig.isEnabled) "Password" else "Standard",
+                                                text = when {
+                                                    uiState.securityConfig.isPasswordConfigured -> "Protection"
+                                                    uiState.securityConfig.isEnabled -> "Needs password"
+                                                    else -> "Standard"
+                                                },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (uiState.securityConfig.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -401,7 +405,7 @@ fun MainScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Full-Width Primary Merge & Download Button (never squashes text)
+                            // Full-width primary merge action. Export status is reported separately.
                             Button(
                                 onClick = { viewModel.startMerge() },
                                 shape = RoundedCornerShape(14.dp),
@@ -411,7 +415,9 @@ fun MainScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .testTag("quick_merge_button")
+                                    .testTag("quick_merge_button"),
+                                enabled = uiState.pages.isNotEmpty() &&
+                                    (!uiState.securityConfig.isEnabled || uiState.securityConfig.isPasswordConfigured)
                             ) {
                                 Icon(
                                     imageVector = if (uiState.securityConfig.isEnabled) Icons.Default.Lock else Icons.AutoMirrored.Filled.MergeType,
@@ -420,7 +426,7 @@ fun MainScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Merge & Download (${uiState.pages.size} Pages)",
+                                    text = "Merge PDF (${uiState.pages.size} Pages)",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
