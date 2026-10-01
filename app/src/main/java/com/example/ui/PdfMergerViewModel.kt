@@ -583,15 +583,21 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             it.copy(
                 documents = emptyList(),
                 pages = emptyList(),
+                securityConfig = PdfSecurityConfig(),
                 mergeState = MergeState.Idle,
                 previewPage = null,
                 reorderDialogPage = null,
                 lockedDocumentPrompt = null,
+                lastMergedFile = null,
+                lastSavedDestinationUri = null,
+                lastSavedPathDisplay = null,
+                triggerSaveDialog = false,
                 userNotice = notice
             )
         }
         viewModelScope.launch(Dispatchers.IO) {
             runCatching { FileUtil.clearOwnedWorkingFiles(context) }
+            runCatching { FileUtil.clearPrivateMergedOutputs(context) }
             PdfThumbnailHelper.clearMemoryCache()
             _uiState.update { it.copy(cacheSizeBytes = FileUtil.ownedCacheSize(context)) }
         }
