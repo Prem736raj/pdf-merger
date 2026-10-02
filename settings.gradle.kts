@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "PDF Merger"
+rootProject.name = "Merge pdf"
 
 include(":app")

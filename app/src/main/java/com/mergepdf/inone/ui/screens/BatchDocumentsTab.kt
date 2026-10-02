@@ -1,0 +1,401 @@
+package com.mergepdf.inone.ui.screens
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.mergepdf.inone.model.PdfDocumentItem
+import com.mergepdf.inone.ui.AppTab
+import com.mergepdf.inone.ui.components.BatchHeroBannerGraphic
+import com.mergepdf.inone.ui.components.DocumentBatchItem
+import com.mergepdf.inone.util.FileUtil
+
+@Composable
+fun BatchDocumentsTab(
+    documents: List<PdfDocumentItem>,
+    totalPages: Int,
+    onAddUris: (List<android.net.Uri>) -> Unit,
+    onMoveDocumentUp: (Int) -> Unit,
+    onMoveDocumentDown: (Int) -> Unit,
+    onRemoveDocument: (String) -> Unit,
+    onClearAll: () -> Unit,
+    onNavigateToPages: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onAddUris(uris)
+        }
+    }
+
+    val totalBytes = documents.sumOf { it.fileSizeBytes }
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+
+    LazyColumn(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Hero Batch Upload Card adaptive for Light & Dark mode
+            Card(
+                shape = RoundedCornerShape(22.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF161536) else Color(0xFFEEF2FF)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isDark) {
+                        Brush.linearGradient(
+                            listOf(Color(0xFF6366F1).copy(alpha = 0.5f), Color(0xFF3B82F6).copy(alpha = 0.3f))
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            listOf(Color(0xFF818CF8).copy(alpha = 0.6f), Color(0xFF6366F1).copy(alpha = 0.35f))
+                        )
+                    }
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("batch_upload_card")
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.linearGradient(
+                                colors = if (isDark) {
+                                    listOf(
+                                        Color(0xFF1E1B4B),
+                                        Color(0xFF281E60),
+                                        Color(0xFF19163D)
+                                    )
+                                } else {
+                                    listOf(
+                                        Color(0xFFEEF2FF),
+                                        Color(0xFFE0E7FF),
+                                        Color(0xFFEDE9FE)
+                                    )
+                                }
+                            )
+                        )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 3D Graphic with stacked documents, red PDF emblem and purple plus badge
+                        BatchHeroBannerGraphic(
+                            modifier = Modifier.padding(end = 12.dp)
+                        )
+
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = "Merge 2+ PDFs into One",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else Color(0xFF1E1B4B)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Combine multiple PDF files securely on your device",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDark) Color(0xFFC7D2FE) else Color(0xFF4338CA),
+                                lineHeight = 16.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Action button: + Upload PDFs
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Primary Button "+ Upload PDFs"
+                                Surface(
+                                    shape = RoundedCornerShape(24.dp),
+                                    color = Color.Transparent,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(24.dp))
+                                        .clickable {
+                                            pdfPickerLauncher.launch(arrayOf("application/pdf"))
+                                        }
+                                        .testTag("upload_pdfs_button")
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(Color(0xFF4F46E5), Color(0xFF7C3AED))
+                                                )
+                                            )
+                                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Add,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Upload PDFs",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Metrics Summary Banner (when documents are loaded)
+        if (documents.isNotEmpty()) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceAround,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        MetricItem(title = "Files", value = documents.size.toString())
+                        MetricItem(title = "Total Pages", value = totalPages.toString())
+                        MetricItem(title = "Total Size", value = FileUtil.formatFileSize(totalBytes))
+                    }
+                }
+            }
+
+            // Documents List Header
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp, bottom = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Batch Document Queue (${documents.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    TextButton(onClick = onClearAll) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Clear All",
+                            color = MaterialTheme.colorScheme.error,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            // Document items list
+            itemsIndexed(
+                items = documents,
+                key = { _, doc -> doc.id }
+            ) { index, doc ->
+                DocumentBatchItem(
+                    document = doc,
+                    index = index,
+                    totalDocuments = documents.size,
+                    onMoveUp = { onMoveDocumentUp(index) },
+                    onMoveDown = { onMoveDocumentDown(index) },
+                    onRemove = { onRemoveDocument(doc.id) }
+                )
+            }
+
+            // Step 2 Quick Navigation Card
+            item {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        MaterialTheme.colorScheme.secondary.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Next: Delete & Reorder Pages",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Text(
+                                text = "Remove unwanted pages (e.g. 2, 4, 89), rotate, or reorder",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Button(
+                            onClick = onNavigateToPages,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.secondary
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Pages & Delete")
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Empty State
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 48.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(72.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FolderOpen,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "No PDF Documents Loaded",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    Text(
+                        text = "Tap 'Upload PDFs' above or share a document from any app to get started.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(72.dp))
+        }
+    }
+}
+
+@Composable
+private fun MetricItem(title: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}

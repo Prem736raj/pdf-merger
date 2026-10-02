@@ -18,5 +18,5 @@
 -dontwarn kotlinx.coroutines.**
 
 # App Models
--keep class com.example.model.** { *; }
+-keep class com.mergepdf.inone.model.** { *; }
 

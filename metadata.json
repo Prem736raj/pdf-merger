@@ -1,6 +1,6 @@
 {
-  "name": "PDF Merger",
-  "description": "Merge multiple PDF documents, reorder pages with visual drag-and-drop thumbnail previews, and protect output PDFs with passwords and security restrictions.",
+  "name": "PDF Merger Pro",
+  "description": "Merge 2+ PDFs into one unified document. Easily add files, remove unwanted pages, reorder visually, and save or export with optional password encryption.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }
