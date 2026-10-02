@@ -170,6 +170,21 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(triggerSaveDialog = false) }
     }
 
+    fun recordSavedDestination(uri: Uri, displayPath: String) {
+        _uiState.update { current ->
+            val updatedMergeState = when (val state = current.mergeState) {
+                is MergeState.Success -> state.copy(savedPathDisplay = displayPath)
+                else -> state
+            }
+            current.copy(
+                lastSavedDestinationUri = uri,
+                lastSavedPathDisplay = displayPath,
+                mergeState = updatedMergeState,
+                userNotice = "Saved to $displayPath."
+            )
+        }
+    }
+
     fun setTab(tab: AppTab) {
         _uiState.update { it.copy(currentTab = tab) }
     }
