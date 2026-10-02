@@ -111,7 +111,7 @@ From a clean clone:
 ./gradlew assembleDebug
 ```
 
-The final hardening code head `7f2b73e5d8655b55b770d40b79da34b0d113cd94` passed:
+The final hardening code head `cc17cc89c59560ccd574df1c1e2380c046e710cd` passed:
 
 - committed-wrapper verification
 - explicit `clean`
