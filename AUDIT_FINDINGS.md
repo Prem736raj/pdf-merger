@@ -4,7 +4,7 @@ Baseline source truth: `main@d41e52ef687d185cbc6e9cdd3778c8596a696786` (`docs: a
 
 Hardening branch: `astra/pdf-merger-production-hardening`.
 
-Final verified code head: `7f2b73e5d8655b55b770d40b79da34b0d113cd94`.
+Final verified code head: `cc17cc89c59560ccd574df1c1e2380c046e710cd`.
 
 That code head passed committed-wrapper verification, explicit `clean`, `testDebugUnitTest`, independent qpdf encryption inspection, `lintDebug`, `lintRelease`, `assembleDebug`, unsigned `assembleRelease`, and unsigned `bundleRelease`.
 
@@ -121,6 +121,9 @@ Automatic raster fallback is disabled because it is not semantically equivalent 
 | PDF-035 | P1 | Path traversal | custom output names could be hostile | sanitize + enforce private output root | traversal regression | FIXED |
 | PDF-036 | P1 | Save destination truth | pre-Q UI could claim direct Downloads; help text described removed drag behavior | API/provider-aware destination and updated help | source/CI | FIXED |
 | PDF-037 | P1 | Signing hygiene | production keystore extensions not ignored | ignore .jks/.keystore/.p12/.pfx; credentials external | repo audit | FIXED |
+| PDF-038 | P1 | Encrypted input truth | unlock UI treated any unlocked-copy failure as an incorrect password | typed password preflight; wrong-password, invalid-PDF, and working-copy/I/O failures now report separately | source + full CI | FIXED |
+| PDF-039 | P2 | Save-state truth | successful manual Save As only showed a Toast and did not update the ViewModel destination state | record the verified destination URI/path and update MergeState.Success metadata | source + full CI | FIXED |
+| PDF-040 | P1 | Backup/device transfer | save-destination SharedPreferences were excluded from cloud backup but not Android 12+ device transfer while docs claimed both | exclude pdf_merger_save_prefs.xml from device-transfer rules too | XML + lintDebug/lintRelease | FIXED |
 
 ## PDF fidelity truth
 
@@ -245,7 +248,7 @@ Scores reflect current evidence, not feature names.
 - Early hardening CI exposed real API-24/lint issues and one external dependency-download 504; source issues were fixed rather than suppressed.
 - Complete Gradle 9.3.1 wrapper is committed and verified read-only.
 - Workflow concurrency cancels superseded branch/PR runs.
-- `7f2b73e5d8655b55b770d40b79da34b0d113cd94`: wrapper ✅, clean ✅, unit tests ✅, qpdf AES profile ✅, `lintDebug` ✅, `lintRelease` ✅, `assembleDebug` ✅, unsigned `assembleRelease` ✅, unsigned `bundleRelease` ✅.
+- `cc17cc89c59560ccd574df1c1e2380c046e710cd`: wrapper ✅, clean ✅, unit tests ✅, qpdf AES profile ✅, `lintDebug` ✅, `lintRelease` ✅, `assembleDebug` ✅, unsigned `assembleRelease` ✅, unsigned `bundleRelease` ✅.
 
 ## Remaining external release qualification
 
