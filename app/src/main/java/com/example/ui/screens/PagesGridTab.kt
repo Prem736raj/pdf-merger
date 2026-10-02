@@ -50,7 +50,6 @@ import com.example.ui.components.PageThumbnailCard
 @Composable
 fun PagesGridTab(
     pages: List<PdfPageItem>,
-    onReorderPage: (fromIndex: Int, toIndex: Int) -> Unit,
     onMovePageDelta: (pageId: String, delta: Int) -> Unit,
     onRotatePageClockwise: (pageId: String) -> Unit,
     onRotatePageCounterClockwise: (pageId: String) -> Unit,
@@ -59,6 +58,7 @@ fun PagesGridTab(
     onReversePages: () -> Unit,
     onDeletePage: (pageId: String) -> Unit,
     onPreviewPage: (PdfPageItem) -> Unit,
+    onRequestThumbnail: (String) -> Unit,
     onOpenReorderDialog: (PdfPageItem) -> Unit,
     onNavigateToSecurity: () -> Unit,
     onNavigateToBatch: () -> Unit,
@@ -145,7 +145,7 @@ fun PagesGridTab(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = "Use ↺ or ↻ buttons below each thumbnail to rotate pages 90°. Long-press and drag thumbnails to reorder.",
+                            text = "Use ↺ or ↻ to rotate. Reorder with the arrow buttons, swipe the page-number badge one step, or tap the badge to jump to an exact position.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             fontWeight = FontWeight.Medium,
@@ -228,17 +228,8 @@ fun PagesGridTab(
                 onResetRotation = { onResetPageRotation(page.id) },
                 onDelete = { onDeletePage(page.id) },
                 onPreview = { onPreviewPage(page) },
-                onOpenReorderDialog = { onOpenReorderDialog(page) },
-                onDragReorder = { deltaY, deltaX ->
-                    val columns = 2 // standard phone layout
-                    val deltaSteps = (deltaY / 220f).toInt() * columns + (deltaX / 160f).toInt()
-                    if (deltaSteps != 0) {
-                        val targetIndex = (index + deltaSteps).coerceIn(0, pages.size - 1)
-                        if (targetIndex != index) {
-                            onReorderPage(index, targetIndex)
-                        }
-                    }
-                }
+                onRequestThumbnail = { onRequestThumbnail(page.id) },
+                onOpenReorderDialog = { onOpenReorderDialog(page) }
             )
         }
 

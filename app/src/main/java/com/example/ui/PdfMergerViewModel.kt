@@ -10,11 +10,17 @@ import com.example.model.PdfDocumentItem
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.example.util.FileUtil
+import com.example.util.PdfInvalidDocumentException
 import com.example.util.PdfMergerEngine
+import com.example.util.PdfPasswordRequiredException
+import com.example.util.PdfWrongPasswordException
 import com.example.util.PdfSaveManager
 import com.example.util.PdfThumbnailHelper
 import com.example.util.SamplePdfGenerator
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,7 +62,6 @@ data class PdfMergerUiState(
     val isAutoSaveDirectly: Boolean = true,
     val triggerSaveDialog: Boolean = false,
     val lockedDocumentPrompt: PdfDocumentItem? = null,
-    val documentPasswords: Map<String, String> = emptyMap(),
     val themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     val cacheSizeBytes: Long = 0L
 )
@@ -72,6 +77,18 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _uiState = MutableStateFlow(PdfMergerUiState())
     val uiState: StateFlow<PdfMergerUiState> = _uiState.asStateFlow()
+    private val thumbnailJobs = mutableMapOf<String, Job>()
+    private var mergeJob: Job? = null
+    private var importJob: Job? = null
+    private var sampleJob: Job? = null
+    private var unlockJob: Job? = null
+    private var sessionCleanupJob: Job? = null
+    private val startupCleanup = viewModelScope.async(Dispatchers.IO) {
+        val context = getApplication<Application>()
+        runCatching { FileUtil.clearOwnedWorkingFiles(context) }
+        runCatching { FileUtil.clearPrivateMergedOutputs(context) }
+        PdfThumbnailHelper.clearMemoryCache()
+    }
 
     private val documentColorPalette = listOf(
         Color(0xFF4F46E5), // Indigo
@@ -105,36 +122,30 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(themeMode = mode) }
     }
 
+    private suspend fun awaitSessionStorageReady() {
+        startupCleanup.await()
+        sessionCleanupJob?.join()
+    }
+
     fun calculateCacheSize() {
         viewModelScope.launch(Dispatchers.IO) {
+            awaitSessionStorageReady()
             val context = getApplication<Application>()
-            var size = 0L
-            context.cacheDir.listFiles()?.forEach { file ->
-                if (file.isFile) size += file.length()
-            }
+            val size = FileUtil.ownedCacheSize(context)
             _uiState.update { it.copy(cacheSizeBytes = size) }
         }
     }
 
     fun clearTempCache() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val context = getApplication<Application>()
-            var count = 0
-            context.cacheDir.listFiles()?.forEach { file ->
-                if (file.isFile && (file.name.endsWith(".png") || file.name.startsWith("thumb_") || file.name.startsWith("unlocked_") || file.name.startsWith("sanitized_"))) {
-                    if (file.delete()) count++
-                }
-            }
-            calculateCacheSize()
-            _uiState.update { it.copy(userNotice = "Temporary cache cleared ($count files removed)") }
-        }
+        clearAllSessionData("Temporary PDF cache cleared.")
     }
 
     fun resetSaveDestinationToDownloads() {
         val context = getApplication<Application>()
         PdfSaveManager.resetToDefaultDownloads(context)
         refreshSaveDestination()
-        _uiState.update { it.copy(userNotice = "Save location reset to Downloads / PDF_Merger") }
+        val displayName = PdfSaveManager.getDestinationDisplayName(context)
+        _uiState.update { it.copy(userNotice = "Save location reset to $displayName.") }
     }
 
     fun refreshSaveDestination() {
@@ -159,6 +170,21 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
         _uiState.update { it.copy(triggerSaveDialog = false) }
     }
 
+    fun recordSavedDestination(uri: Uri, displayPath: String) {
+        _uiState.update { current ->
+            val updatedMergeState = when (val state = current.mergeState) {
+                is MergeState.Success -> state.copy(savedPathDisplay = displayPath)
+                else -> state
+            }
+            current.copy(
+                lastSavedDestinationUri = uri,
+                lastSavedPathDisplay = displayPath,
+                mergeState = updatedMergeState,
+                userNotice = "Saved to $displayPath."
+            )
+        }
+    }
+
     fun setTab(tab: AppTab) {
         _uiState.update { it.copy(currentTab = tab) }
     }
@@ -172,31 +198,95 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun unlockDocumentWithPassword(documentId: String, password: String) {
-        viewModelScope.launch {
-            val doc = _uiState.value.documents.find { it.id == documentId } ?: return@launch
-            val context = getApplication<Application>()
-            val sanitizedFile = File(context.cacheDir, "unlocked_${doc.fileName}")
-            val success = withContext(Dispatchers.IO) {
-                PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
-            }
-            if (success) {
-                val updatedDocs = _uiState.value.documents.map {
-                    if (it.id == documentId) it.copy(localFile = sanitizedFile, isLocked = false, password = password) else it
+        if (unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "A password unlock is already in progress.") }
+            return
+        }
+
+        unlockJob = viewModelScope.launch {
+            try {
+                awaitSessionStorageReady()
+                val doc = _uiState.value.documents.find { it.id == documentId } ?: return@launch
+                val context = getApplication<Application>()
+                val sanitizedFile = File(FileUtil.documentSessionDir(context, doc.id), "unlocked.pdf")
+                val success = withContext(Dispatchers.IO) {
+                    // Validate the password separately so a later working-copy/storage failure
+                    // is never mislabeled as an incorrect password.
+                    PdfMergerEngine.loadDocumentSafely(doc.localFile, password).use { }
+                    PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
                 }
-                val newPasswords = _uiState.value.documentPasswords + (documentId to password)
-                _uiState.update {
-                    it.copy(
-                        documents = updatedDocs,
-                        documentPasswords = newPasswords,
-                        lockedDocumentPrompt = null,
-                        userNotice = "Successfully unlocked ${doc.fileName}!"
-                    )
+
+                if (!success) {
+                    _uiState.update {
+                        it.copy(
+                            userNotice = "Password was accepted, but a private unlocked working copy could not be created. Re-import the PDF and try again."
+                        )
+                    }
+                    return@launch
                 }
-                // Automatically re-trigger merge with the now-unlocked document
-                startMerge()
-            } else {
+
+                try {
+                    val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(sanitizedFile) }
+                    val pages = (0 until pageCount).map { pageIndex ->
+                        PdfPageItem(
+                            id = "${doc.id}_p$pageIndex",
+                            documentId = doc.id,
+                            documentName = doc.fileName,
+                            pageIndex = pageIndex,
+                            accentColor = doc.accentColor
+                        )
+                    }
+
+                    _uiState.update { current ->
+                        if (current.documents.none { it.id == documentId }) {
+                            sanitizedFile.delete()
+                            current
+                        } else {
+                            current.copy(
+                                documents = current.documents.map {
+                                    if (it.id == documentId) {
+                                        it.copy(
+                                            localFile = sanitizedFile,
+                                            fileSizeBytes = sanitizedFile.length(),
+                                            pageCount = pageCount,
+                                            isEncrypted = true,
+                                            isLocked = false
+                                        )
+                                    } else it
+                                },
+                                pages = current.pages.filterNot { it.documentId == documentId } + pages,
+                                lockedDocumentPrompt = null,
+                                userNotice = "Unlocked ${doc.fileName}. Password was not retained."
+                            )
+                        }
+                    }
+                    calculateCacheSize()
+                } catch (e: CancellationException) {
+                    sanitizedFile.delete()
+                    throw e
+                } catch (e: Exception) {
+                    sanitizedFile.delete()
+                    _uiState.update {
+                        it.copy(userNotice = "Could not validate ${doc.fileName}: ${e.message}")
+                    }
+                }
+            } catch (e: PdfWrongPasswordException) {
                 _uiState.update {
-                    it.copy(userNotice = "Incorrect password for ${doc.fileName}. Please try again.")
+                    it.copy(userNotice = "Incorrect password for this PDF. Please try again.")
+                }
+            } catch (e: PdfPasswordRequiredException) {
+                _uiState.update {
+                    it.copy(userNotice = "This PDF still requires a password.")
+                }
+            } catch (e: PdfInvalidDocumentException) {
+                _uiState.update {
+                    it.copy(userNotice = "This PDF is malformed, unsupported, or unreadable and could not be unlocked.")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(userNotice = "Could not unlock the PDF: ${e.localizedMessage ?: "I/O failure"}.")
                 }
             }
         }
@@ -219,7 +309,13 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun loadSampleDocuments() {
-        viewModelScope.launch {
+        if (sampleJob?.isActive == true || importJob?.isActive == true || unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "Another document operation is already in progress.") }
+            return
+        }
+
+        sampleJob = viewModelScope.launch {
+            awaitSessionStorageReady()
             _uiState.update {
                 it.copy(
                     isProcessing = true,
@@ -228,15 +324,17 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             }
             try {
                 val context = getApplication<Application>()
-                val sampleFiles = SamplePdfGenerator.generateStandardSampleDocuments(context)
+                val sampleFiles = withContext(Dispatchers.IO) {
+                    SamplePdfGenerator.generateStandardSampleDocuments(context)
+                }
 
                 val newDocs = mutableListOf<PdfDocumentItem>()
                 val newPages = mutableListOf<PdfPageItem>()
 
                 sampleFiles.forEachIndexed { index, file ->
                     val color = documentColorPalette[(_uiState.value.documents.size + index) % documentColorPalette.size]
-                    val pageCount = FileUtil.getPdfPageCount(file)
                     val docId = UUID.randomUUID().toString()
+                    val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(file) }
 
                     val docItem = PdfDocumentItem(
                         id = docId,
@@ -250,14 +348,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                     newDocs.add(docItem)
 
                     for (p in 0 until pageCount) {
-                        val thumb = PdfThumbnailHelper.renderPageThumbnail(context, file, p)
                         newPages.add(
                             PdfPageItem(
                                 id = "${docId}_p$p",
                                 documentId = docId,
                                 documentName = file.name,
                                 pageIndex = p,
-                                thumbnailFile = thumb,
                                 accentColor = color
                             )
                         )
@@ -269,14 +365,17 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                         documents = current.documents + newDocs,
                         pages = current.pages + newPages,
                         isProcessing = false,
+                        processingMessage = "",
                         userNotice = "Loaded ${newDocs.size} sample PDF files ready for testing!"
                     )
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                e.printStackTrace()
                 _uiState.update {
                     it.copy(
                         isProcessing = false,
+                        processingMessage = "",
                         userNotice = "Failed to load sample documents: ${e.message}"
                     )
                 }
@@ -286,8 +385,12 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun addDocumentsFromUris(uris: List<Uri>) {
         if (uris.isEmpty()) return
+        if (importJob?.isActive == true || sampleJob?.isActive == true || unlockJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "Another document operation is already in progress.") }
+            return
+        }
 
-        viewModelScope.launch {
+        importJob = viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isProcessing = true,
@@ -295,68 +398,165 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 )
             }
 
-            val context = getApplication<Application>()
-            val newDocs = mutableListOf<PdfDocumentItem>()
-            val newPages = mutableListOf<PdfPageItem>()
+            try {
+                awaitSessionStorageReady()
+                val context = getApplication<Application>()
+                val newDocs = mutableListOf<PdfDocumentItem>()
+                val newPages = mutableListOf<PdfPageItem>()
+                val failedImports = mutableListOf<String>()
+                var firstLockedDocument: PdfDocumentItem? = null
+                val uniqueUris = uris.distinct()
 
-            for ((i, uri) in uris.withIndex()) {
-                try {
-                    _uiState.update {
-                        it.copy(processingMessage = "Importing file ${i + 1} of ${uris.size}...")
-                    }
-                    val cachedFile = FileUtil.copyUriToCache(context, uri)
-                    val pageCount = FileUtil.getPdfPageCount(cachedFile)
-                    val docId = UUID.randomUUID().toString()
-                    val colorIndex = (_uiState.value.documents.size + i) % documentColorPalette.size
-                    val color = documentColorPalette[colorIndex]
+                for ((index, uri) in uniqueUris.withIndex()) {
+                    val documentId = UUID.randomUUID().toString()
+                    val displayName = FileUtil.getFileNameFromUri(context, uri)
+                    val color = documentColorPalette[
+                        (_uiState.value.documents.size + index) % documentColorPalette.size
+                    ]
 
-                    val docItem = PdfDocumentItem(
-                        id = docId,
-                        fileName = cachedFile.name.substringAfter("_"),
-                        fileSizeBytes = cachedFile.length(),
-                        pageCount = pageCount,
-                        sourceUri = uri,
-                        localFile = cachedFile,
-                        accentColor = color
-                    )
-                    newDocs.add(docItem)
+                    try {
+                        _uiState.update {
+                            it.copy(processingMessage = "Importing file ${index + 1} of ${uniqueUris.size}...")
+                        }
 
-                    for (p in 0 until pageCount) {
-                        val thumb = PdfThumbnailHelper.renderPageThumbnail(context, cachedFile, p)
-                        newPages.add(
-                            PdfPageItem(
-                                id = "${docId}_p$p",
-                                documentId = docId,
-                                documentName = docItem.fileName,
-                                pageIndex = p,
-                                thumbnailFile = thumb,
-                                accentColor = color
+                        val cachedFile = FileUtil.copyUriToCache(
+                            context = context,
+                            uri = uri,
+                            documentId = documentId,
+                            customName = displayName
+                        )
+                        val pageCount = withContext(Dispatchers.IO) { FileUtil.getPdfPageCount(cachedFile) }
+                        val document = PdfDocumentItem(
+                            id = documentId,
+                            fileName = displayName,
+                            fileSizeBytes = cachedFile.length(),
+                            pageCount = pageCount,
+                            sourceUri = uri,
+                            localFile = cachedFile,
+                            accentColor = color
+                        )
+                        newDocs.add(document)
+
+                        for (pageIndex in 0 until pageCount) {
+                            newPages.add(
+                                PdfPageItem(
+                                    id = "${documentId}_p$pageIndex",
+                                    documentId = documentId,
+                                    documentName = displayName,
+                                    pageIndex = pageIndex,
+                                    accentColor = color
+                                )
                             )
+                        }
+                    } catch (e: CancellationException) {
+                        runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+                        throw e
+                    } catch (e: PdfPasswordRequiredException) {
+                        val sourceFile = FileUtil.documentSessionDir(context, documentId)
+                            .listFiles()
+                            ?.firstOrNull { it.isFile && it.name.startsWith("source_") }
+
+                        if (sourceFile != null) {
+                            val lockedDocument = PdfDocumentItem(
+                                id = documentId,
+                                fileName = displayName,
+                                fileSizeBytes = sourceFile.length(),
+                                pageCount = 0,
+                                sourceUri = uri,
+                                localFile = sourceFile,
+                                accentColor = color,
+                                isEncrypted = true,
+                                isLocked = true
+                            )
+                            newDocs.add(lockedDocument)
+                            if (firstLockedDocument == null) firstLockedDocument = lockedDocument
+                        } else {
+                            failedImports.add(displayName)
+                            runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+                        }
+                    } catch (e: Exception) {
+                        failedImports.add(displayName)
+                        runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+                    }
+                }
+
+                val notice = buildString {
+                    append("Imported ${newDocs.count { !it.isLocked }} PDF document(s)")
+                    if (newPages.isNotEmpty()) append(" with ${newPages.size} pages")
+                    if (newDocs.any { it.isLocked }) {
+                        append(". ${newDocs.count { it.isLocked }} document(s) need a password")
+                    }
+                    if (failedImports.isNotEmpty()) {
+                        append(". ${failedImports.size} file(s) were rejected as unreadable or invalid")
+                    }
+                    append(".")
+                }
+
+                _uiState.update { current ->
+                    current.copy(
+                        documents = current.documents + newDocs,
+                        pages = current.pages + newPages,
+                        isProcessing = false,
+                        processingMessage = "",
+                        lockedDocumentPrompt = firstLockedDocument,
+                        userNotice = notice
+                    )
+                }
+                calculateCacheSize()
+            } catch (e: CancellationException) {
+                throw e
+            }
+        }
+    }
+
+    fun requestThumbnail(pageId: String) {
+        val page = _uiState.value.pages.firstOrNull { it.id == pageId } ?: return
+        val currentThumbnail = page.thumbnailFile
+        if (currentThumbnail != null && currentThumbnail.exists() && currentThumbnail.length() > 0L) return
+        if (thumbnailJobs[pageId]?.isActive == true) return
+
+        val document = _uiState.value.documents.firstOrNull { it.id == page.documentId } ?: return
+        val context = getApplication<Application>()
+        thumbnailJobs[pageId] = viewModelScope.launch {
+            try {
+                val thumbnail = PdfThumbnailHelper.renderPageThumbnail(
+                    context = context,
+                    pdfFile = document.localFile,
+                    pageIndex = page.pageIndex,
+                    documentId = page.documentId
+                )
+                if (thumbnail != null && thumbnail.exists()) {
+                    _uiState.update { current ->
+                        current.copy(
+                            pages = current.pages.map { item ->
+                                if (item.id == pageId) item.copy(thumbnailFile = thumbnail) else item
+                            }
                         )
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
-            }
-
-            _uiState.update { current ->
-                current.copy(
-                    documents = current.documents + newDocs,
-                    pages = current.pages + newPages,
-                    isProcessing = false,
-                    userNotice = "Successfully imported ${newDocs.size} PDF document(s) with ${newPages.size} pages!"
-                )
+            } finally {
+                thumbnailJobs.remove(pageId)
             }
         }
     }
 
     fun removeDocument(documentId: String) {
+        val pageIds = _uiState.value.pages.filter { it.documentId == documentId }.map { it.id }
+        pageIds.forEach { pageId -> thumbnailJobs.remove(pageId)?.cancel() }
+        val context = getApplication<Application>()
         _uiState.update { current ->
             current.copy(
                 documents = current.documents.filterNot { it.id == documentId },
                 pages = current.pages.filterNot { it.documentId == documentId },
-                userNotice = "Removed document and its pages."
+                lockedDocumentPrompt = current.lockedDocumentPrompt?.takeIf { it.id != documentId },
+                userNotice = "Removed document and its temporary files."
             )
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { FileUtil.deleteDocumentSession(context, documentId) }
+            PdfThumbnailHelper.clearMemoryCache()
+            val size = FileUtil.ownedCacheSize(context)
+            _uiState.update { it.copy(cacheSizeBytes = size) }
         }
     }
 
@@ -461,6 +661,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun deletePage(pageId: String) {
+        thumbnailJobs.remove(pageId)?.cancel()
         _uiState.update { current ->
             val updated = current.pages.filterNot { it.id == pageId }
             val updatedPreview = if (current.previewPage?.id == pageId) null else current.previewPage
@@ -489,15 +690,48 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun clearAll() {
+        clearAllSessionData("Cleared all loaded documents and temporary PDF files.")
+    }
+
+    private fun clearAllSessionData(notice: String) {
+        val jobsToAwait = buildList {
+            mergeJob?.let { add(it) }
+            importJob?.let { add(it) }
+            sampleJob?.let { add(it) }
+            unlockJob?.let { add(it) }
+            addAll(thumbnailJobs.values)
+        }
+        val clearCause = CancellationException("Session cleared")
+        jobsToAwait.forEach { it.cancel(clearCause) }
+        thumbnailJobs.clear()
+        val context = getApplication<Application>()
         _uiState.update {
             it.copy(
                 documents = emptyList(),
                 pages = emptyList(),
+                securityConfig = PdfSecurityConfig(),
                 mergeState = MergeState.Idle,
+                isProcessing = false,
+                processingMessage = "",
                 previewPage = null,
                 reorderDialogPage = null,
-                userNotice = "Cleared all loaded documents and pages."
+                lockedDocumentPrompt = null,
+                lastMergedFile = null,
+                lastSavedDestinationUri = null,
+                lastSavedPathDisplay = null,
+                triggerSaveDialog = false,
+                userNotice = notice
             )
+        }
+        val previousCleanup = sessionCleanupJob
+        sessionCleanupJob = viewModelScope.launch(Dispatchers.IO) {
+            startupCleanup.await()
+            previousCleanup?.join()
+            jobsToAwait.forEach { it.join() }
+            runCatching { FileUtil.clearOwnedWorkingFiles(context) }
+            runCatching { FileUtil.clearPrivateMergedOutputs(context) }
+            PdfThumbnailHelper.clearMemoryCache()
+            _uiState.update { it.copy(cacheSizeBytes = FileUtil.ownedCacheSize(context)) }
         }
     }
 
@@ -511,115 +745,147 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
             _uiState.update { it.copy(userNotice = "No pages to merge. Please add at least one PDF.") }
             return
         }
+        if (mergeJob?.isActive == true) {
+            _uiState.update { it.copy(userNotice = "A merge is already in progress.") }
+            return
+        }
 
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    mergeState = MergeState.Merging(0.01f, "Initializing merge...")
-                )
-            }
-
-            val context = getApplication<Application>()
-            val sourceFiles = _uiState.value.documents.associate { it.id to it.localFile }
-            val secConfig = _uiState.value.securityConfig
-
-            val result = PdfMergerEngine.mergePdfPages(
-                context = context,
-                orderedPages = pagesToMerge,
-                sourceFilesMap = sourceFiles,
-                passwordsMap = _uiState.value.documentPasswords,
-                securityConfig = secConfig,
-                customOutputName = _uiState.value.outputFileName,
-                onProgress = { progress, step ->
-                    _uiState.update { it.copy(mergeState = MergeState.Merging(progress, step)) }
+        mergeJob = viewModelScope.launch {
+            var pendingOutput: File? = null
+            try {
+                _uiState.update {
+                    it.copy(mergeState = MergeState.Merging(0.01f, "Initializing merge..."))
                 }
-            )
 
-            result.fold(
-                onSuccess = { outputFile ->
-                    // Attempt direct save to user's chosen folder or Downloads
-                    val saveResult = PdfSaveManager.saveMergedPdfDirectly(
-                        context = context,
-                        sourcePdfFile = outputFile,
-                        customFileName = _uiState.value.outputFileName
-                    )
+                val context = getApplication<Application>()
+                val sourceFiles = _uiState.value.documents.associate { it.id to it.localFile }
+                val secConfig = _uiState.value.securityConfig
 
-                    val outcome = when (saveResult) {
-                        is PdfSaveManager.SaveResult.Success -> {
-                            SaveOutcome(
-                                destUri = saveResult.destinationUri,
-                                destDisplay = saveResult.displayPath,
-                                shouldTriggerPicker = false,
-                                notice = "Successfully merged and downloaded directly to ${saveResult.displayPath}!"
+                val result = PdfMergerEngine.mergePdfPages(
+                    context = context,
+                    orderedPages = pagesToMerge,
+                    sourceFilesMap = sourceFiles,
+                    securityConfig = secConfig,
+                    customOutputName = _uiState.value.outputFileName,
+                    onProgress = { progress, step ->
+                        _uiState.update { it.copy(mergeState = MergeState.Merging(progress, step)) }
+                    }
+                )
+
+                result.fold(
+                    onSuccess = { mergeOutput ->
+                        val outputFile = mergeOutput.file
+                        pendingOutput = outputFile
+                        val verification = mergeOutput.verification
+                        _uiState.update {
+                            it.copy(mergeState = MergeState.Merging(0.99f, "Saving merged PDF..."))
+                        }
+
+                        val saveResult = PdfSaveManager.saveMergedPdfDirectly(
+                            context = context,
+                            sourcePdfFile = outputFile,
+                            customFileName = _uiState.value.outputFileName
+                        )
+
+                        val outcome = when (saveResult) {
+                            is PdfSaveManager.SaveResult.Success -> {
+                                SaveOutcome(
+                                    destUri = saveResult.destinationUri,
+                                    destDisplay = saveResult.displayPath,
+                                    shouldTriggerPicker = false,
+                                    notice = "Merged and saved to ${saveResult.displayPath}."
+                                )
+                            }
+                            is PdfSaveManager.SaveResult.RequiresPicker -> {
+                                SaveOutcome(null, null, true, "Merge complete! Please choose a save location.")
+                            }
+                            is PdfSaveManager.SaveResult.Failure -> {
+                                SaveOutcome(null, null, true, "Merge complete! ${saveResult.errorMessage}")
+                            }
+                        }
+
+                        _uiState.update { current ->
+                            current.copy(
+                                lastMergedFile = outputFile,
+                                lastSavedDestinationUri = outcome.destUri,
+                                lastSavedPathDisplay = outcome.destDisplay,
+                                triggerSaveDialog = outcome.shouldTriggerPicker,
+                                mergeState = MergeState.Success(
+                                    outputFile = outputFile,
+                                    totalPages = verification.pageCount,
+                                    fileSizeBytes = outputFile.length(),
+                                    isProtected = verification.isEncrypted,
+                                    userPasswordSet = verification.userPasswordAccepted,
+                                    ownerPasswordSet = verification.ownerPasswordAccepted,
+                                    restrictedPrinting = verification.restrictedPrinting,
+                                    restrictedModifying = verification.restrictedModifying,
+                                    restrictedCopying = verification.restrictedCopying,
+                                    restrictedAnnotations = verification.restrictedAnnotations,
+                                    savedPathDisplay = outcome.destDisplay
+                                ),
+                                userNotice = outcome.notice
                             )
                         }
-                        is PdfSaveManager.SaveResult.RequiresPicker -> {
-                            SaveOutcome(null, null, true, "Merge complete! Please choose a save location.")
-                        }
-                        is PdfSaveManager.SaveResult.Failure -> {
-                            SaveOutcome(null, null, true, "Merge complete! ${saveResult.errorMessage}")
+                        pendingOutput = null
+                    },
+                    onFailure = { error ->
+                        val errorMsg = error.localizedMessage ?: "Merge failed"
+                        val isPasswordError =
+                            error is PdfPasswordRequiredException || error is PdfWrongPasswordException
+
+                        if (isPasswordError) {
+                            val lockedDoc = _uiState.value.documents.find { doc ->
+                                errorMsg.contains(doc.fileName, ignoreCase = true) ||
+                                    errorMsg.contains(doc.localFile.name, ignoreCase = true)
+                            } ?: _uiState.value.documents.firstOrNull { it.isLocked }
+                                ?: _uiState.value.documents.firstOrNull()
+
+                            _uiState.update {
+                                it.copy(
+                                    mergeState = MergeState.Idle,
+                                    lockedDocumentPrompt = lockedDoc,
+                                    userNotice = "Password required to unlock ${lockedDoc?.fileName ?: "document"}."
+                                )
+                            }
+                        } else {
+                            _uiState.update {
+                                it.copy(
+                                    mergeState = MergeState.Error(errorMsg),
+                                    userNotice = "Merge failed: $errorMsg"
+                                )
+                            }
                         }
                     }
-
-                    _uiState.update { current ->
-                        current.copy(
-                            lastMergedFile = outputFile,
-                            lastSavedDestinationUri = outcome.destUri,
-                            lastSavedPathDisplay = outcome.destDisplay,
-                            triggerSaveDialog = outcome.shouldTriggerPicker,
-                            mergeState = MergeState.Success(
-                                outputFile = outputFile,
-                                totalPages = pagesToMerge.size,
-                                fileSizeBytes = outputFile.length(),
-                                isProtected = secConfig.isEnabled,
-                                userPasswordSet = secConfig.userPassword.isNotBlank(),
-                                ownerPasswordSet = secConfig.ownerPassword.isNotBlank(),
-                                restrictedPrinting = secConfig.restrictPrinting,
-                                restrictedModifying = secConfig.restrictModifying,
-                                restrictedCopying = secConfig.restrictCopyingText,
-                                restrictedAnnotations = secConfig.restrictAddingAnnotations,
-                                savedPathDisplay = outcome.destDisplay
-                            ),
-                            userNotice = outcome.notice
+                )
+            } catch (e: CancellationException) {
+                pendingOutput?.delete()
+                if (e.message != "Session cleared") {
+                    _uiState.update {
+                        it.copy(
+                            mergeState = MergeState.Idle,
+                            triggerSaveDialog = false,
+                            userNotice = "Merge cancelled."
                         )
                     }
-                },
-                onFailure = { error ->
-                    val errorMsg = error.localizedMessage ?: "Merge failed"
-                    val isPasswordError = error is com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException ||
-                            errorMsg.contains("password", ignoreCase = true)
-
-                    if (isPasswordError) {
-                        // Find the locked document that needs a password
-                        val lockedDoc = _uiState.value.documents.find { doc ->
-                            errorMsg.contains(doc.fileName, ignoreCase = true) ||
-                                    errorMsg.contains(doc.localFile.name, ignoreCase = true)
-                        } ?: _uiState.value.documents.firstOrNull { it.isLocked } ?: _uiState.value.documents.firstOrNull()
-
-                        _uiState.update {
-                            it.copy(
-                                mergeState = MergeState.Idle,
-                                lockedDocumentPrompt = lockedDoc,
-                                userNotice = "Password required to unlock ${lockedDoc?.fileName ?: "document"}."
-                            )
-                        }
-                    } else {
-                        _uiState.update {
-                            it.copy(
-                                mergeState = MergeState.Error(errorMsg),
-                                userNotice = "Merge failed: $errorMsg"
-                            )
-                        }
-                    }
                 }
-            )
+                throw e
+            } finally {
+                mergeJob = null
+            }
+        }
+    }
+
+    fun cancelMerge() {
+        val activeJob = mergeJob
+        if (activeJob?.isActive == true) {
+            activeJob.cancel(CancellationException("Merge cancelled by user"))
         }
     }
 
     fun downloadOrOpenMergedPdf(context: android.content.Context, onRequirePicker: (String) -> Unit) {
         val file = _uiState.value.lastMergedFile
         if (file == null || !file.exists()) {
-            _uiState.update { it.copy(userNotice = "No merged PDF available yet. Please click 'Merge & Download' first.") }
+            _uiState.update { it.copy(userNotice = "No merged PDF is available yet. Merge the selected pages first.") }
             return
         }
 
@@ -636,7 +902,7 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(
                             lastSavedDestinationUri = saveResult.destinationUri,
                             lastSavedPathDisplay = saveResult.displayPath,
-                            userNotice = "Downloaded directly to ${saveResult.displayPath}!"
+                            userNotice = "Saved to ${saveResult.displayPath}."
                         )
                     }
                     // Also prompt to open

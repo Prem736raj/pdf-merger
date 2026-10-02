@@ -104,10 +104,8 @@ import com.example.ui.screens.BatchDocumentsTab
 import com.example.ui.screens.PagesGridTab
 import com.example.ui.screens.SecurityTab
 import com.example.util.FileUtil
-import kotlinx.coroutines.Dispatchers
+import com.example.util.PdfSaveManager
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.FileInputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -129,18 +127,34 @@ fun MainScreen(
             val fileToSave = (uiState.mergeState as? MergeState.Success)?.outputFile ?: uiState.lastMergedFile
             if (fileToSave != null && fileToSave.exists()) {
                 scope.launch {
-                    try {
-                        withContext(Dispatchers.IO) {
-                            context.contentResolver.openOutputStream(destinationUri)?.use { out ->
-                                FileInputStream(fileToSave).use { input ->
-                                    input.copyTo(out)
-                                }
-                            }
+                    when (
+                        val result = PdfSaveManager.saveMergedPdfToUri(
+                            context = context,
+                            sourcePdfFile = fileToSave,
+                            destinationUri = destinationUri,
+                            displayName = FileUtil.getFileNameFromUri(context, destinationUri)
+                        )
+                    ) {
+                        is PdfSaveManager.SaveResult.Success -> {
+                            viewModel.recordSavedDestination(
+                                uri = result.destinationUri,
+                                displayPath = result.displayPath
+                            )
                         }
-                        Toast.makeText(context, "PDF saved to device successfully!", Toast.LENGTH_LONG).show()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        Toast.makeText(context, "Error saving PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+                        is PdfSaveManager.SaveResult.Failure -> {
+                            Toast.makeText(
+                                context,
+                                "Save failed: ${result.errorMessage}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        PdfSaveManager.SaveResult.RequiresPicker -> {
+                            Toast.makeText(
+                                context,
+                                "Save failed. Please choose a location again.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }
             }
@@ -153,9 +167,21 @@ fun MainScreen(
     ) { treeUri ->
         if (treeUri != null) {
             val folderName = treeUri.lastPathSegment?.substringAfterLast(':') ?: "Chosen Folder"
-            com.example.util.PdfSaveManager.setCustomFolder(context, treeUri, folderName)
-            viewModel.refreshSaveDestination()
-            Toast.makeText(context, "Default save folder set to: $folderName", Toast.LENGTH_SHORT).show()
+            val persisted = com.example.util.PdfSaveManager.setCustomFolder(context, treeUri, folderName)
+            if (persisted) {
+                viewModel.refreshSaveDestination()
+                Toast.makeText(
+                    context,
+                    "Default save folder set to: $folderName",
+                    Toast.LENGTH_SHORT
+                ).show()
+            } else {
+                Toast.makeText(
+                    context,
+                    "Folder access could not be retained. Choose another folder or use Save As.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -350,7 +376,11 @@ fun MainScreen(
                                             )
                                             Spacer(modifier = Modifier.width(3.dp))
                                             Text(
-                                                text = if (uiState.securityConfig.isEnabled) "Password" else "Standard",
+                                                text = when {
+                                                    uiState.securityConfig.isPasswordConfigured -> "Protection"
+                                                    uiState.securityConfig.isEnabled -> "Needs password"
+                                                    else -> "Standard"
+                                                },
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (uiState.securityConfig.isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                             )
@@ -386,7 +416,7 @@ fun MainScreen(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Full-Width Primary Merge & Download Button (never squashes text)
+                            // Full-width primary merge action. Export status is reported separately.
                             Button(
                                 onClick = { viewModel.startMerge() },
                                 shape = RoundedCornerShape(14.dp),
@@ -396,7 +426,9 @@ fun MainScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(48.dp)
-                                    .testTag("quick_merge_button")
+                                    .testTag("quick_merge_button"),
+                                enabled = uiState.pages.isNotEmpty() &&
+                                    (!uiState.securityConfig.isEnabled || uiState.securityConfig.isPasswordConfigured)
                             ) {
                                 Icon(
                                     imageVector = if (uiState.securityConfig.isEnabled) Icons.Default.Lock else Icons.AutoMirrored.Filled.MergeType,
@@ -405,7 +437,7 @@ fun MainScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Merge & Download (${uiState.pages.size} Pages)",
+                                    text = "Merge PDF (${uiState.pages.size} Pages)",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -503,7 +535,6 @@ fun MainScreen(
                 AppTab.PAGES -> {
                     PagesGridTab(
                         pages = uiState.pages,
-                        onReorderPage = { from, to -> viewModel.reorderPage(from, to) },
                         onMovePageDelta = { pageId, delta -> viewModel.movePageDelta(pageId, delta) },
                         onRotatePageClockwise = { pageId -> viewModel.rotatePageClockwise(pageId) },
                         onRotatePageCounterClockwise = { pageId -> viewModel.rotatePageCounterClockwise(pageId) },
@@ -512,6 +543,7 @@ fun MainScreen(
                         onReversePages = { viewModel.reversePageOrder() },
                         onDeletePage = { pageId -> viewModel.deletePage(pageId) },
                         onPreviewPage = { page -> viewModel.setPreviewPage(page) },
+                        onRequestThumbnail = { pageId -> viewModel.requestThumbnail(pageId) },
                         onOpenReorderDialog = { page -> viewModel.setReorderDialogPage(page) },
                         onNavigateToSecurity = { viewModel.setTab(AppTab.SECURITY) },
                         onNavigateToBatch = { viewModel.setTab(AppTab.FILES) }
@@ -576,7 +608,10 @@ fun MainScreen(
 
     // Merge Progress Dialog
     (uiState.mergeState as? MergeState.Merging)?.let { mergingState ->
-        MergeProgressDialog(mergeState = mergingState)
+        MergeProgressDialog(
+            mergeState = mergingState,
+            onCancel = { viewModel.cancelMerge() }
+        )
     }
 
     // Merge Success Dialog with Download/Save
@@ -712,7 +747,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.titleLarge
                 )
                 Text(
-                    text = "Version 1.0.0 • 100% Offline & Private",
+                    text = "Version 1.0.0 • Local PDF processing",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -777,13 +812,13 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "100% Private & Offline",
+                                        text = "Private, local processing",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
                                     )
                                     Text(
-                                        text = "Your files never leave your device.",
+                                        text = "PDF processing stays on-device; files leave app-private storage only when you save or share them.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
                                     )
@@ -798,23 +833,23 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Data Collection",
-                            description = "We don't collect, track, or share your documents, passwords, or personal details."
+                            title = "No Built-in Data Collection",
+                            description = "The app has no analytics or cloud-upload dependency in its current build."
                         )
 
                         SimplePrivacyItem(
-                            title = "100% Offline Processing",
-                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
+                            title = "Local PDF Processing",
+                            description = "Merging, page rotation, previews, and PDF protection run locally without Android INTERNET permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Storage Risk",
-                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
+                            title = "Scoped File Access",
+                            description = "The app works with PDFs you explicitly open or share through Android document and intent APIs, without broad storage permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Instant Cleanup",
-                            description = "Temporary cache files created during assembly are deleted immediately."
+                            title = "Controlled Cleanup",
+                            description = "Remove Document, Clear All, and Clear Cache delete app-owned working copies for the active session; exported PDFs are left untouched."
                         )
                     }
                     1 -> {
@@ -827,10 +862,10 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
 
                         Text(
                             text = "1. Batch Import: Select multiple PDF files at once, or use 'Open with / Share' from any Android file manager or messaging app.\n\n" +
-                                    "2. Page Drag & Drop: Drag page sequence badges (#1, #2...) or long-press cards to visually organize the final document sequence.\n\n" +
+                                    "2. Page Reorder: Use the arrow controls, swipe a page-number badge one step, or tap the badge to move a page to an exact position.\n\n" +
                                     "3. Per-Page Rotation: Rotate individual pages 90° clockwise or counter-clockwise.\n\n" +
-                                    "4. PDF Security: Encrypt merged outputs with AES 128-bit encryption, set user & owner passwords, and restrict printing or copying.\n\n" +
-                                    "5. Direct Downloads: Automatically save directly to your Downloads/PDF_Merger folder or choose a custom folder.",
+                                    "4. PDF Security: Apply password protection and PDF permission restrictions, then verify the saved protection state before success.\n\n" +
+                                    "5. Export: Android 10+ can auto-save to Downloads/PDF_Merger; a custom SAF folder can be retained when the provider grants persistent access. Older Android versions use the system save picker.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             lineHeight = 18.sp
@@ -871,7 +906,7 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                                "Check out PDF Merger: local on-device PDF merging with page controls and optional password protection for Android!"
                             )
                         }
                         context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))

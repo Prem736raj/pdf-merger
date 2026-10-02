@@ -1,6 +1,0 @@
-{
-  "name": "PDF Merger",
-  "description": "Merge multiple PDF documents, reorder pages with visual drag-and-drop thumbnail previews, and protect output PDFs with passwords and security restrictions.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

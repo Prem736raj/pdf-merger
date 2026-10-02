@@ -266,13 +266,13 @@ fun AppSettingsDialog(
                             ) {
                                 Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
                                     Text(
-                                        text = "Direct Auto-Save",
+                                        text = "Automatic Save",
                                         fontWeight = FontWeight.Bold,
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
                                     Text(
-                                        text = "Directly download to default folder without asking location every time.",
+                                        text = "Save automatically to the configured destination when Android and the provider allow it; otherwise ask for a location.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 11.5.sp
@@ -470,13 +470,13 @@ fun AppSettingsDialog(
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column {
                                     Text(
-                                        text = "100% Private & Offline",
+                                        text = "Private, local processing",
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.Bold,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFF6EE7B7) else Color(0xFF065F46)
                                     )
                                     Text(
-                                        text = "Your documents never leave your phone.",
+                                        text = "PDF processing stays on-device; files leave app-private storage only when you save or share them.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0xFFA7F3D0) else Color(0xFF047857)
                                     )
@@ -491,29 +491,29 @@ fun AppSettingsDialog(
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Data Collection",
-                            description = "We don't collect, track, or share your documents, passwords, or personal details."
+                            title = "Local PDF Processing",
+                            description = "PDF merge operations run locally. Files leave the app only when you explicitly save or share them."
                         )
 
                         SimplePrivacyItem(
-                            title = "100% Offline Processing",
-                            description = "All merging, page rotation, and encryption happen strictly on your device without internet."
+                            title = "No Network Permission",
+                            description = "The app does not request Android's INTERNET permission and has no cloud PDF-processing dependency."
                         )
 
                         SimplePrivacyItem(
-                            title = "Zero Storage Risk",
-                            description = "We only open files you explicitly choose. The app cannot read your other private photos or folders."
+                            title = "Scoped File Access",
+                            description = "PDFs are imported through Android's document/intent APIs without broad storage permission."
                         )
 
                         SimplePrivacyItem(
-                            title = "Instant Cleanup",
-                            description = "Temporary cache files created during assembly are deleted immediately."
+                            title = "Private File Lifecycle",
+                            description = "Clear All / Clear Cache removes active working copies, thumbnails, passwords, and the app-private merged copy."
                         )
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                         Text(
-                            text = "Version 1.0.0 • 100% Offline & Secure",
+                            text = "Version 1.0.0 • Local PDF processing",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.outline
                         )
@@ -550,7 +550,7 @@ fun AppSettingsDialog(
                                         type = "text/plain"
                                         putExtra(
                                             Intent.EXTRA_TEXT,
-                                            "Check out PDF Merger: 100% offline, private, and fast PDF page merger with password security for Android!"
+                                            "Check out PDF Merger: local on-device PDF merging with page controls and optional password protection for Android!"
                                         )
                                     }
                                     context.startActivity(Intent.createChooser(shareIntent, "Share PDF Merger"))

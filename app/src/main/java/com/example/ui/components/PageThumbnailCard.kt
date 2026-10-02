@@ -6,9 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,8 +16,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.layout.padding
+ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -40,6 +37,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,13 +56,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.zIndex
-import com.example.model.PdfPageItem
-import kotlin.math.roundToInt
-
+ import com.example.model.PdfPageItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+ 
 @Composable
 fun PageThumbnailCard(
     page: PdfPageItem,
@@ -79,13 +76,11 @@ fun PageThumbnailCard(
     onResetRotation: () -> Unit,
     onDelete: () -> Unit,
     onPreview: () -> Unit,
+    onRequestThumbnail: () -> Unit,
     onOpenReorderDialog: () -> Unit,
-    onDragReorder: (dragDeltaY: Float, dragDeltaX: Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isDragging by remember { mutableStateOf(false) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
     var accumulatedHorizontalDrag by remember { mutableFloatStateOf(0f) }
 
     val scale by animateFloatAsState(
@@ -95,9 +90,17 @@ fun PageThumbnailCard(
 
     val elevation = if (isDragging) 12.dp else 3.dp
 
-    val bitmap = remember(page.thumbnailFile) {
-        page.thumbnailFile?.let { file ->
-            if (file.exists()) BitmapFactory.decodeFile(file.absolutePath) else null
+    var bitmap by remember(page.id) { mutableStateOf<android.graphics.Bitmap?>(null) }
+
+    LaunchedEffect(page.id, page.thumbnailFile?.absolutePath) {
+        val thumbnailFile = page.thumbnailFile
+        if (thumbnailFile != null && thumbnailFile.exists() && thumbnailFile.length() > 0L) {
+            bitmap = withContext(Dispatchers.IO) {
+                BitmapFactory.decodeFile(thumbnailFile.absolutePath)
+            }
+        } else {
+            bitmap = null
+            onRequestThumbnail()
         }
     }
 
@@ -110,53 +113,11 @@ fun PageThumbnailCard(
         modifier = modifier
             .testTag("page_thumbnail_${sequenceNumber}")
             .scale(scale)
-            .offset { IntOffset(offsetX.roundToInt(), offsetY.roundToInt()) }
-            .zIndex(if (isDragging) 10f else 1f)
             .border(
                 width = if (isDragging) 2.5.dp else 1.5.dp,
                 color = if (isDragging) MaterialTheme.colorScheme.primary else page.accentColor.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(16.dp)
             )
-            .pointerInput(page.id, sequenceNumber) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = {
-                        isDragging = true
-                    },
-                    onDragEnd = {
-                        isDragging = false
-                        offsetX = 0f
-                        offsetY = 0f
-                    },
-                    onDragCancel = {
-                        isDragging = false
-                        offsetX = 0f
-                        offsetY = 0f
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        offsetX += dragAmount.x
-                        offsetY += dragAmount.y
-
-                        // Live Drag to change page number:
-                        // When dragged right by > 65px or down by > 120px, increment page number
-                        if (offsetX > 65f) {
-                            if (canMoveRight) onMoveRight()
-                            offsetX -= 65f
-                        } else if (offsetX < -65f) {
-                            if (canMoveLeft) onMoveLeft()
-                            offsetX += 65f
-                        }
-
-                        if (offsetY > 120f) {
-                            if (canMoveRight) onMoveRight()
-                            offsetY -= 120f
-                        } else if (offsetY < -120f) {
-                            if (canMoveLeft) onMoveLeft()
-                            offsetY += 120f
-                        }
-                    }
-                )
-            }
     ) {
         Column(
             modifier = Modifier
@@ -257,9 +218,10 @@ fun PageThumbnailCard(
                     .clickable { onPreview() },
                 contentAlignment = Alignment.Center
             ) {
-                if (bitmap != null) {
+                val thumbnailBitmap = bitmap
+                if (thumbnailBitmap != null) {
                     Image(
-                        bitmap = bitmap.asImageBitmap(),
+                        bitmap = thumbnailBitmap.asImageBitmap(),
                         contentDescription = "Page $sequenceNumber preview",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier

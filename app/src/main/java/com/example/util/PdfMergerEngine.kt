@@ -1,103 +1,114 @@
 package com.example.util
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
-import android.graphics.pdf.PdfDocument
-import android.graphics.pdf.PdfRenderer
-import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
+import kotlin.coroutines.coroutineContext
 
-class PdfPasswordRequiredException(message: String) : java.io.IOException(message)
+class PdfPasswordRequiredException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class PdfWrongPasswordException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class PdfInvalidDocumentException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class PdfMergeConsistencyException(message: String) : IOException(message)
+class PdfSecurityException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class PdfCompatibilityModeRequiredException(message: String, cause: Throwable? = null) : IOException(message, cause)
+
+data class PdfVerificationResult(
+    val pageCount: Int,
+    val isEncrypted: Boolean,
+    val encryptionAlgorithm: String?,
+    val encryptionKeyLength: Int?,
+    val userPasswordAccepted: Boolean,
+    val ownerPasswordAccepted: Boolean,
+    val restrictedPrinting: Boolean,
+    val restrictedModifying: Boolean,
+    val restrictedCopying: Boolean,
+    val restrictedAnnotations: Boolean
+)
+
+data class PdfMergeOutput(
+    val file: File,
+    val verification: PdfVerificationResult
+)
 
 object PdfMergerEngine {
 
     private const val TAG = "PdfMergerEngine"
+    private const val PDFBOX_MAIN_MEMORY_BUDGET_BYTES = 16L * 1024L * 1024L
     private var isInitialized = false
 
+    @Synchronized
     fun init(context: Context) {
-        if (!isInitialized) {
-            try {
-                PDFBoxResourceLoader.init(context.applicationContext)
-                isInitialized = true
-            } catch (e: Throwable) {
-                Log.e(TAG, "PDFBoxResourceLoader init error: ${e.message}")
-            }
-        }
+        if (isInitialized) return
+        PDFBoxResourceLoader.init(context.applicationContext)
+        isInitialized = true
     }
 
-    /**
-     * Safely loads a PDF document, automatically resolving empty passwords ("")
-     * and removing permission locks (which trigger "Password required" in other tools).
-     */
     fun loadDocumentSafely(file: File, password: String? = null): PDDocument {
-        // 1. Try standard load
-        try {
-            val doc = PDDocument.load(file)
-            if (doc.isEncrypted) {
-                doc.setAllSecurityToBeRemoved(true)
+        if (!file.exists() || !file.isFile || file.length() <= 0L) {
+            throw PdfInvalidDocumentException("PDF file is missing or empty: ${file.name}")
+        }
+
+        return try {
+            val document = PDDocument.load(
+                file,
+                password.orEmpty(),
+                memoryUsageFor(file)
+            )
+            if (document.isEncrypted) {
+                document.setAllSecurityToBeRemoved(true)
             }
-            return doc
+            document
+        } catch (e: InvalidPasswordException) {
+            if (password.isNullOrEmpty()) {
+                throw PdfPasswordRequiredException(
+                    "The PDF '${file.name}' requires a password.",
+                    e
+                )
+            }
+            throw PdfWrongPasswordException(
+                "The password supplied for '${file.name}' is incorrect.",
+                e
+            )
+        } catch (e: PdfPasswordRequiredException) {
+            throw e
+        } catch (e: PdfWrongPasswordException) {
+            throw e
         } catch (e: Exception) {
-            Log.d(TAG, "Standard load attempt failed for ${file.name}: ${e.message}")
+            throw PdfInvalidDocumentException(
+                "The PDF '${file.name}' is malformed, unsupported, or unreadable.",
+                e
+            )
         }
-
-        // 2. Try with empty password "" (resolves 95% of restricted/permission-locked PDFs)
-        try {
-            val doc = PDDocument.load(file, "")
-            if (doc.isEncrypted) {
-                doc.setAllSecurityToBeRemoved(true)
-            }
-            return doc
-        } catch (e: Exception) {
-            Log.d(TAG, "Empty password load attempt failed for ${file.name}: ${e.message}")
-        }
-
-        // 3. Try user provided password if present
-        if (!password.isNullOrBlank()) {
-            try {
-                val doc = PDDocument.load(file, password)
-                if (doc.isEncrypted) {
-                    doc.setAllSecurityToBeRemoved(true)
-                }
-                return doc
-            } catch (e: Exception) {
-                Log.d(TAG, "Custom password load failed for ${file.name}: ${e.message}")
-            }
-        }
-
-        throw PdfPasswordRequiredException("The PDF '${file.name}' is password-protected. Please enter its password to unlock.")
     }
 
-    /**
-     * Decrypts a file if encrypted and saves a clean, unlocked copy.
-     */
     fun decryptAndSanitizePdf(file: File, password: String? = null, destination: File): Boolean {
         return try {
-            val doc = loadDocumentSafely(file, password)
-            doc.setAllSecurityToBeRemoved(true)
-            doc.save(destination)
-            doc.close()
+            loadDocumentSafely(file, password).use { document ->
+                document.setAllSecurityToBeRemoved(true)
+                document.save(destination)
+            }
             true
         } catch (e: Exception) {
-            Log.w(TAG, "Could not decrypt ${file.name}: ${e.message}")
+            Log.w(TAG, "Could not create unlocked working copy for ${file.name}: ${e.message}")
+            destination.delete()
             false
         }
     }
@@ -110,7 +121,7 @@ object PdfMergerEngine {
         securityConfig: PdfSecurityConfig,
         customOutputName: String?,
         onProgress: (Float, String) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
+    ): Result<PdfMergeOutput> = withContext(Dispatchers.IO) {
         if (orderedPages.isEmpty()) {
             return@withContext Result.failure(IllegalArgumentException("No pages selected for merging"))
         }
@@ -118,254 +129,335 @@ object PdfMergerEngine {
         init(context)
 
         val outputDir = File(context.filesDir, "merged_pdfs").apply { mkdirs() }
-        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-        val baseName = if (!customOutputName.isNullOrBlank()) {
-            customOutputName.trim().removeSuffix(".pdf")
-        } else {
-            "Merged_Document_$timestamp"
-        }
-        val sanitizedName = baseName.replace(Regex("[^a-zA-Z0-9_-]"), "_") + ".pdf"
-        val outputFile = File(outputDir, sanitizedName)
+        val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val baseName = customOutputName
+            ?.trim()
+            ?.removeSuffix(".pdf")
+            ?.takeIf { it.isNotBlank() }
+            ?: "Merged_Document_$timestamp"
+        val sanitizedName = sanitizeOutputFileName(baseName) + ".pdf"
+        val outputFile = uniqueOutputFile(outputDir, sanitizedName)
 
-        // Try Primary Strategy: Vector PDFBox Merge
+        val openedSourceDocs = mutableMapOf<String, PDDocument>()
+        var mergedDoc: PDDocument? = null
+
         try {
+            validateSecurityRequest(securityConfig)
             onProgress(0.05f, "Preparing documents for merge...")
-            val openedSourceDocs = mutableMapOf<String, PDDocument>()
-            val decryptedFiles = mutableMapOf<String, File>()
 
-            for ((docId, file) in sourceFilesMap) {
-                if (orderedPages.any { it.documentId == docId } && file.exists()) {
-                    try {
-                        val pwd = passwordsMap[docId]
-                        val doc = loadDocumentSafely(file, pwd)
-                        openedSourceDocs[docId] = doc
-
-                        // Also create a sanitized clean file in cache for any renderer fallback
-                        val cleanCache = File(context.cacheDir, "sanitized_${docId}.pdf")
-                        try {
-                            doc.save(cleanCache)
-                            decryptedFiles[docId] = cleanCache
-                        } catch (saveErr: Exception) {
-                            decryptedFiles[docId] = file
-                        }
-                    } catch (loadErr: Exception) {
-                        Log.w(TAG, "Failed to load document $docId (${file.name}): ${loadErr.message}")
-                        throw loadErr // Pass through password exception to notify user which doc is locked
-                    }
+            val requiredDocumentIds = orderedPages.map { it.documentId }.toSet()
+            for (documentId in requiredDocumentIds) {
+                coroutineContext.ensureActive()
+                val file = sourceFilesMap[documentId]
+                    ?: throw PdfMergeConsistencyException("Source file is missing for document $documentId")
+                if (!file.exists()) {
+                    throw PdfMergeConsistencyException("Source file no longer exists: ${file.name}")
+                }
+                val sourceDocument = loadDocumentSafely(file, passwordsMap[documentId])
+                try {
+                    validateSourceFidelity(sourceDocument, file.name)
+                    openedSourceDocs[documentId] = sourceDocument
+                } catch (e: Exception) {
+                    runCatching { sourceDocument.close() }
+                    throw e
                 }
             }
 
-            val mergedDoc = PDDocument()
-            val total = orderedPages.size
+            mergedDoc = PDDocument()
+            val totalPages = orderedPages.size
 
             for ((index, pageItem) in orderedPages.withIndex()) {
+                coroutineContext.ensureActive()
                 val sourceDoc = openedSourceDocs[pageItem.documentId]
-                    ?: throw IllegalStateException("Source document not found for ${pageItem.documentName}")
+                    ?: throw PdfMergeConsistencyException(
+                        "Source document not loaded for ${pageItem.documentName}"
+                    )
 
-                if (pageItem.pageIndex >= sourceDoc.numberOfPages) {
-                    continue
+                if (pageItem.pageIndex !in 0 until sourceDoc.numberOfPages) {
+                    throw PdfMergeConsistencyException(
+                        "Requested page ${pageItem.pageIndex + 1} is outside '${pageItem.documentName}' " +
+                            "(${sourceDoc.numberOfPages} pages)."
+                    )
                 }
 
                 val originalPage = sourceDoc.getPage(pageItem.pageIndex)
                 val importedPage = mergedDoc.importPage(originalPage)
 
-                if (pageItem.rotationDegrees != 0) {
-                    val currentRotation = importedPage.rotation
-                    importedPage.rotation = (currentRotation + pageItem.rotationDegrees) % 360
+                // PDFBox importPage() copies page-local resources, but intentionally omits
+                // resources inherited from the source page tree. Materialize inherited
+                // resources on the imported page so fonts/images/operators remain resolvable.
+                if (!originalPage.cosObject.containsKey(COSName.RESOURCES) && originalPage.resources != null) {
+                    importedPage.resources = originalPage.resources
                 }
 
-                val progress = 0.1f + (0.75f * ((index + 1).toFloat() / total.toFloat()))
-                onProgress(progress, "Merging page ${index + 1} of $total...")
-            }
-
-            // Apply output security only if the user explicitly enabled it
-            if (securityConfig.isEnabled && (securityConfig.userPassword.isNotBlank() || securityConfig.ownerPassword.isNotBlank())) {
-                onProgress(0.90f, "Applying requested security settings...")
-                try {
-                    val ap = AccessPermission().apply {
-                        setCanPrint(!securityConfig.restrictPrinting)
-                        setCanModify(!securityConfig.restrictModifying)
-                        setCanExtractContent(!securityConfig.restrictCopyingText)
-                        setCanModifyAnnotations(!securityConfig.restrictAddingAnnotations)
-                        setCanAssembleDocument(!securityConfig.restrictModifying)
-                        setCanFillInForm(!securityConfig.restrictModifying)
-                    }
-
-                    val ownerPwd = when {
-                        securityConfig.ownerPassword.isNotBlank() -> securityConfig.ownerPassword
-                        securityConfig.userPassword.isNotBlank() -> securityConfig.userPassword
-                        else -> "OwnerKey2026"
-                    }
-                    val userPwd = securityConfig.userPassword
-
-                    val protectionPolicy = StandardProtectionPolicy(ownerPwd, userPwd, ap).apply {
-                        encryptionKeyLength = securityConfig.encryptionKeyLength
-                    }
-                    mergedDoc.protect(protectionPolicy)
-                } catch (secEx: Exception) {
-                    Log.e(TAG, "Security protection application error: ${secEx.message}")
+                val normalizedRotation = ((pageItem.rotationDegrees % 360) + 360) % 360
+                if (normalizedRotation != 0) {
+                    importedPage.rotation = ((importedPage.rotation + normalizedRotation) % 360 + 360) % 360
                 }
-            } else {
-                // Ensure output is free from unwanted inherited passwords
-                mergedDoc.setAllSecurityToBeRemoved(true)
+
+                val progress = 0.10f + (0.75f * ((index + 1).toFloat() / totalPages.toFloat()))
+                onProgress(progress, "Merging page ${index + 1} of $totalPages...")
             }
 
-            onProgress(0.95f, "Saving combined PDF...")
+            if (mergedDoc.numberOfPages != orderedPages.size) {
+                throw PdfMergeConsistencyException(
+                    "Merge produced ${mergedDoc.numberOfPages} pages; ${orderedPages.size} were requested."
+                )
+            }
+
+            applyOutputSecurity(mergedDoc, securityConfig)
+
+            onProgress(0.92f, "Saving combined PDF...")
             mergedDoc.save(outputFile)
             mergedDoc.close()
+            mergedDoc = null
 
-            for (doc in openedSourceDocs.values) {
-                try { doc.close() } catch (ignored: Exception) {}
-            }
+            onProgress(0.97f, "Verifying merged PDF...")
+            val verification = verifyOutputPdf(
+                file = outputFile,
+                expectedPageCount = orderedPages.size,
+                securityConfig = securityConfig
+            )
 
             onProgress(1.0f, "Merge complete!")
-            Result.success(outputFile)
-        } catch (pdfBoxEx: Throwable) {
-            Log.w(TAG, "PDFBox merge failed (${pdfBoxEx.message}). Triggering native renderer fallback...", pdfBoxEx)
-            if (pdfBoxEx is PdfPasswordRequiredException || pdfBoxEx is InvalidPasswordException) {
-                // User must provide password for locked source document
-                Result.failure(pdfBoxEx)
-            } else {
-                mergeUsingNativeRenderer(context, orderedPages, sourceFilesMap, securityConfig, outputFile, onProgress)
+            Result.success(PdfMergeOutput(outputFile, verification))
+        } catch (e: CancellationException) {
+            outputFile.delete()
+            throw e
+        } catch (e: PdfPasswordRequiredException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfWrongPasswordException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfInvalidDocumentException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfMergeConsistencyException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfSecurityException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: PdfCompatibilityModeRequiredException) {
+            outputFile.delete()
+            Result.failure(e)
+        } catch (e: Exception) {
+            outputFile.delete()
+            Result.failure(
+                PdfCompatibilityModeRequiredException(
+                    "Vector PDF merge failed. Raster fallback is disabled because it can destroy searchable text, links, forms, annotations, and vector content.",
+                    e
+                )
+            )
+        } finally {
+            try {
+                mergedDoc?.close()
+            } catch (_: Exception) {
+            }
+            openedSourceDocs.values.forEach { document ->
+                try {
+                    document.close()
+                } catch (_: Exception) {
+                }
             }
         }
     }
 
-    private suspend fun mergeUsingNativeRenderer(
-        context: Context,
-        orderedPages: List<PdfPageItem>,
-        sourceFilesMap: Map<String, File>,
-        securityConfig: PdfSecurityConfig,
-        outputFile: File,
-        onProgress: (Float, String) -> Unit
-    ): Result<File> = withContext(Dispatchers.IO) {
-        var pdfDocument: PdfDocument? = null
-        val openedRenderers = mutableMapOf<String, Pair<PdfRenderer, ParcelFileDescriptor>>()
+    fun verifyOutputPdf(
+        file: File,
+        expectedPageCount: Int,
+        securityConfig: PdfSecurityConfig
+    ): PdfVerificationResult {
+        if (!file.exists() || !file.isFile || file.length() <= 0L) {
+            throw PdfMergeConsistencyException("Merged PDF was not written successfully.")
+        }
+
+        val openPassword = if (securityConfig.isEnabled) securityConfig.userPassword else ""
+        val document = try {
+            PDDocument.load(file, openPassword, memoryUsageFor(file))
+        } catch (e: InvalidPasswordException) {
+            throw PdfSecurityException("Merged PDF could not be reopened with the configured user password.", e)
+        } catch (e: Exception) {
+            throw PdfMergeConsistencyException("Merged PDF could not be reopened for verification: ${e.message}")
+        }
+
+        var isEncrypted = false
+        var encryptionAlgorithm: String? = null
+        var encryptionKeyLength: Int? = null
+        var restrictedPrinting = false
+        var restrictedModifying = false
+        var restrictedCopying = false
+        var restrictedAnnotations = false
+
+        document.use { verified ->
+            if (verified.numberOfPages != expectedPageCount) {
+                throw PdfMergeConsistencyException(
+                    "Merged PDF verification found ${verified.numberOfPages} pages; expected $expectedPageCount."
+                )
+            }
+
+            isEncrypted = verified.isEncrypted
+            if (securityConfig.isEnabled && !isEncrypted) {
+                throw PdfSecurityException("Protection was requested, but the saved PDF is not encrypted.")
+            }
+            if (!securityConfig.isEnabled && isEncrypted) {
+                throw PdfSecurityException("Protection was not requested, but the saved PDF is encrypted.")
+            }
+
+            if (securityConfig.isEnabled) {
+                val encryption = verified.encryption
+                    ?: throw PdfSecurityException("Encrypted output has no readable encryption dictionary.")
+                val cryptMethod = encryption.stdCryptFilterDictionary?.cryptFilterMethod
+                if (encryption.filter != "Standard" ||
+                    encryption.version != 4 ||
+                    encryption.revision != 4 ||
+                    encryption.length != 128 ||
+                    cryptMethod != COSName.AESV2
+                ) {
+                    throw PdfSecurityException(
+                        "Protected output is not the required Standard AES-128 (AESV2) profile."
+                    )
+                }
+                encryptionAlgorithm = "AES-128"
+                encryptionKeyLength = encryption.length
+
+                val permission = verified.currentAccessPermission
+                restrictedPrinting = !permission.canPrint()
+                restrictedModifying = !permission.canModify()
+                restrictedCopying = !permission.canExtractContent()
+                restrictedAnnotations = !permission.canModifyAnnotations()
+
+                if (restrictedPrinting != securityConfig.restrictPrinting ||
+                    restrictedModifying != securityConfig.restrictModifying ||
+                    restrictedCopying != securityConfig.restrictCopyingText ||
+                    restrictedAnnotations != securityConfig.restrictAddingAnnotations
+                ) {
+                    throw PdfSecurityException("Saved PDF permission flags do not match the requested restrictions.")
+                }
+            }
+        }
+
+        val userPasswordAccepted = securityConfig.isEnabled && securityConfig.userPassword.isNotBlank()
+        val ownerPasswordAccepted = if (securityConfig.isEnabled && securityConfig.ownerPassword.isNotBlank()) {
+            try {
+                PDDocument.load(
+                    file,
+                    securityConfig.ownerPassword,
+                    memoryUsageFor(file)
+                ).use { ownerDoc ->
+                    ownerDoc.currentAccessPermission.isOwnerPermission
+                }
+            } catch (_: Exception) {
+                false
+            }
+        } else {
+            false
+        }
+
+        if (securityConfig.ownerPassword.isNotBlank() && !ownerPasswordAccepted) {
+            throw PdfSecurityException("Configured owner password could not be verified against the saved PDF.")
+        }
+
+        return PdfVerificationResult(
+            pageCount = expectedPageCount,
+            isEncrypted = isEncrypted,
+            encryptionAlgorithm = encryptionAlgorithm,
+            encryptionKeyLength = encryptionKeyLength,
+            userPasswordAccepted = userPasswordAccepted,
+            ownerPasswordAccepted = ownerPasswordAccepted,
+            restrictedPrinting = restrictedPrinting,
+            restrictedModifying = restrictedModifying,
+            restrictedCopying = restrictedCopying,
+            restrictedAnnotations = restrictedAnnotations
+        )
+    }
+
+    private fun memoryUsageFor(file: File): MemoryUsageSetting {
+        return MemoryUsageSetting.setupMixed(PDFBOX_MAIN_MEMORY_BUDGET_BYTES).apply {
+            file.parentFile?.takeIf { it.exists() && it.isDirectory }?.let { setTempDir(it) }
+        }
+    }
+
+    private fun validateSourceFidelity(document: PDDocument, displayName: String) {
+        val acroForm = document.documentCatalog.acroForm
+        if (acroForm != null && (acroForm.hasXFA() || acroForm.fields.isNotEmpty())) {
+            throw PdfCompatibilityModeRequiredException(
+                "The PDF '$displayName' contains interactive form/signature structure. " +
+                    "This page-level merge path refuses to detach or invalidate document-level fields silently."
+            )
+        }
+    }
+
+    private fun validateSecurityRequest(config: PdfSecurityConfig) {
+        if (!config.isEnabled) return
+        if (!config.isPasswordConfigured) {
+            throw PdfSecurityException("PDF protection is enabled, but no user or owner password is configured.")
+        }
+        if (config.userPassword.isNotBlank() &&
+            config.ownerPassword.isNotBlank() &&
+            config.userPassword == config.ownerPassword
+        ) {
+            throw PdfSecurityException("User and owner passwords must be different.")
+        }
+        if (config.encryptionKeyLength != 128) {
+            throw PdfSecurityException("Unsupported encryption key length: ${config.encryptionKeyLength}")
+        }
+    }
+
+    private fun applyOutputSecurity(document: PDDocument, config: PdfSecurityConfig) {
+        if (!config.isEnabled) {
+            document.setAllSecurityToBeRemoved(true)
+            return
+        }
+
+        val accessPermission = AccessPermission().apply {
+            setCanPrint(!config.restrictPrinting)
+            setCanModify(!config.restrictModifying)
+            setCanExtractContent(!config.restrictCopyingText)
+            setCanModifyAnnotations(!config.restrictAddingAnnotations)
+            setCanAssembleDocument(!config.restrictModifying)
+            setCanFillInForm(!config.restrictModifying)
+        }
+
+        val ownerPassword = config.ownerPassword.ifBlank {
+            "internal-owner-${UUID.randomUUID()}-${UUID.randomUUID()}"
+        }
 
         try {
-            onProgress(0.1f, "Initializing document assembler...")
-            pdfDocument = PdfDocument()
-            val total = orderedPages.size
-
-            for ((index, pageItem) in orderedPages.withIndex()) {
-                val sourceFile = sourceFilesMap[pageItem.documentId]
-                    ?: throw IllegalStateException("File not found for ${pageItem.documentName}")
-
-                var rendererPair = openedRenderers[pageItem.documentId]
-                if (rendererPair == null) {
-                    // Try to unlock/sanitize first so PdfRenderer doesn't fail
-                    val sanitizedFile = File(context.cacheDir, "sanitized_render_${pageItem.documentId}.pdf")
-                    val fileToOpen = if (decryptAndSanitizePdf(sourceFile, null, sanitizedFile)) {
-                        sanitizedFile
-                    } else {
-                        sourceFile
-                    }
-
-                    val pfd = ParcelFileDescriptor.open(fileToOpen, ParcelFileDescriptor.MODE_READ_ONLY)
-                    val renderer = PdfRenderer(pfd)
-                    rendererPair = Pair(renderer, pfd)
-                    openedRenderers[pageItem.documentId] = rendererPair
-                }
-
-                val renderer = rendererPair.first
-                if (pageItem.pageIndex >= renderer.pageCount) {
-                    continue
-                }
-
-                val srcPage = renderer.openPage(pageItem.pageIndex)
-
-                val baseWidth = srcPage.width
-                val baseHeight = srcPage.height
-
-                val isQuarterTurn = (pageItem.rotationDegrees % 180 != 0)
-                val outWidth = if (isQuarterTurn) baseHeight else baseWidth
-                val outHeight = if (isQuarterTurn) baseWidth else baseHeight
-
-                val pageInfo = PdfDocument.PageInfo.Builder(outWidth, outHeight, index + 1).create()
-                val newPage = pdfDocument.startPage(pageInfo)
-                val canvas: Canvas = newPage.canvas
-
-                // Render page to bitmap at 1.5x resolution for crisp text & visuals
-                val scale = 1.5f
-                val bmpW = (baseWidth * scale).toInt().coerceAtMost(2048)
-                val bmpH = (baseHeight * scale).toInt().coerceAtMost(2048)
-                val bitmap = Bitmap.createBitmap(bmpW, bmpH, Bitmap.Config.ARGB_8888)
-                val bmpCanvas = Canvas(bitmap)
-                bmpCanvas.drawColor(Color.WHITE)
-                srcPage.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
-                srcPage.close()
-
-                canvas.save()
-                if (pageItem.rotationDegrees != 0) {
-                    canvas.rotate(pageItem.rotationDegrees.toFloat(), outWidth / 2f, outHeight / 2f)
-                }
-
-                val matrix = Matrix()
-                matrix.postScale(baseWidth.toFloat() / bmpW, baseHeight.toFloat() / bmpH)
-                if (isQuarterTurn) {
-                    val dx = (outWidth - baseWidth) / 2f
-                    val dy = (outHeight - baseHeight) / 2f
-                    matrix.postTranslate(dx, dy)
-                }
-                canvas.drawBitmap(bitmap, matrix, Paint(Paint.FILTER_BITMAP_FLAG))
-                canvas.restore()
-
-                bitmap.recycle()
-                pdfDocument.finishPage(newPage)
-
-                val progress = 0.15f + (0.80f * ((index + 1).toFloat() / total.toFloat()))
-                onProgress(progress, "Assembling page ${index + 1} of $total...")
+            val policy = StandardProtectionPolicy(ownerPassword, config.userPassword, accessPermission).apply {
+                encryptionKeyLength = config.encryptionKeyLength
+                isPreferAES = true
             }
-
-            onProgress(0.95f, "Writing merged file...")
-            FileOutputStream(outputFile).use { out ->
-                pdfDocument.writeTo(out)
-            }
-            pdfDocument.close()
-            pdfDocument = null
-
-            // Output security only if explicitly requested
-            if (securityConfig.isEnabled && (securityConfig.userPassword.isNotBlank() || securityConfig.ownerPassword.isNotBlank())) {
-                try {
-                    onProgress(0.97f, "Encrypting merged file...")
-                    val pdDoc = PDDocument.load(outputFile)
-                    val ap = AccessPermission().apply {
-                        setCanPrint(!securityConfig.restrictPrinting)
-                        setCanModify(!securityConfig.restrictModifying)
-                        setCanExtractContent(!securityConfig.restrictCopyingText)
-                        setCanModifyAnnotations(!securityConfig.restrictAddingAnnotations)
-                    }
-                    val ownerPwd = when {
-                        securityConfig.ownerPassword.isNotBlank() -> securityConfig.ownerPassword
-                        securityConfig.userPassword.isNotBlank() -> securityConfig.userPassword
-                        else -> "OwnerKey2026"
-                    }
-                    val spp = StandardProtectionPolicy(ownerPwd, securityConfig.userPassword, ap).apply {
-                        encryptionKeyLength = securityConfig.encryptionKeyLength
-                    }
-                    pdDoc.protect(spp)
-                    pdDoc.save(outputFile)
-                    pdDoc.close()
-                } catch (secEx: Throwable) {
-                    Log.w(TAG, "Native renderer security wrapper notice: ${secEx.message}")
-                }
-            }
-
-            onProgress(1.0f, "Merge complete!")
-            Result.success(outputFile)
+            document.protect(policy)
         } catch (e: Exception) {
-            Log.e(TAG, "Native renderer merge error: ${e.message}", e)
-            Result.failure(e)
-        } finally {
-            try {
-                pdfDocument?.close()
-            } catch (ignored: Throwable) {}
-            for ((_, pair) in openedRenderers) {
-                try {
-                    pair.first.close()
-                    pair.second.close()
-                } catch (ignored: Throwable) {}
-            }
+            throw PdfSecurityException("Failed to apply requested PDF protection.", e)
+        }
+    }
+
+    private fun sanitizeOutputFileName(name: String): String {
+        val withoutControls = name
+            .replace(Regex("[\\p{Cc}\\p{Cf}]"), "")
+            .replace("..", "_")
+            .replace('/', '_')
+            .replace('\\', '_')
+        return withoutControls
+            .replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            .trim('.', '_', ' ')
+            .take(120)
+            .ifBlank { "Merged_Document" }
+    }
+
+    private fun uniqueOutputFile(directory: File, requestedName: String): File {
+        val first = File(directory, requestedName)
+        if (!first.exists()) return first
+
+        val stem = requestedName.removeSuffix(".pdf")
+        var counter = 2
+        while (true) {
+            val candidate = File(directory, "$stem ($counter).pdf")
+            if (!candidate.exists()) return candidate
+            counter++
         }
     }
 }

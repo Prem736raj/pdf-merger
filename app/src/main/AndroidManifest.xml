@@ -23,7 +23,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Play Store Ready: Open or Receive PDF file directly -->
+            <!-- Open or receive a PDF file directly. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <action android:name="android.intent.action.SEND" />
@@ -32,7 +32,7 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
 
-            <!-- Play Store Ready: Receive multiple PDF files to merge -->
+            <!-- Receive multiple PDF files to merge. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND_MULTIPLE" />
                 <category android:name="android.intent.category.DEFAULT" />
