@@ -10,6 +10,7 @@ import com.example.model.PdfDocumentItem
 import com.example.model.PdfPageItem
 import com.example.model.PdfSecurityConfig
 import com.example.util.FileUtil
+import com.example.util.PdfInvalidDocumentException
 import com.example.util.PdfMergerEngine
 import com.example.util.PdfPasswordRequiredException
 import com.example.util.PdfWrongPasswordException
@@ -194,12 +195,17 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                 val context = getApplication<Application>()
                 val sanitizedFile = File(FileUtil.documentSessionDir(context, doc.id), "unlocked.pdf")
                 val success = withContext(Dispatchers.IO) {
+                    // Validate the password separately so a later working-copy/storage failure
+                    // is never mislabeled as an incorrect password.
+                    PdfMergerEngine.loadDocumentSafely(doc.localFile, password).use { }
                     PdfMergerEngine.decryptAndSanitizePdf(doc.localFile, password, sanitizedFile)
                 }
 
                 if (!success) {
                     _uiState.update {
-                        it.copy(userNotice = "Incorrect password for ${doc.fileName}. Please try again.")
+                        it.copy(
+                            userNotice = "Password was accepted, but a private unlocked working copy could not be created. Re-import the PDF and try again."
+                        )
                     }
                     return@launch
                 }
@@ -249,8 +255,24 @@ class PdfMergerViewModel(application: Application) : AndroidViewModel(applicatio
                         it.copy(userNotice = "Could not validate ${doc.fileName}: ${e.message}")
                     }
                 }
+            } catch (e: PdfWrongPasswordException) {
+                _uiState.update {
+                    it.copy(userNotice = "Incorrect password for this PDF. Please try again.")
+                }
+            } catch (e: PdfPasswordRequiredException) {
+                _uiState.update {
+                    it.copy(userNotice = "This PDF still requires a password.")
+                }
+            } catch (e: PdfInvalidDocumentException) {
+                _uiState.update {
+                    it.copy(userNotice = "This PDF is malformed, unsupported, or unreadable and could not be unlocked.")
+                }
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(userNotice = "Could not unlock the PDF: ${e.localizedMessage ?: "I/O failure"}.")
+                }
             }
         }
     }
