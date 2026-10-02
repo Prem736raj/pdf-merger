@@ -132,15 +132,14 @@ fun MainScreen(
                             context = context,
                             sourcePdfFile = fileToSave,
                             destinationUri = destinationUri,
-                            displayName = "selected location"
+                            displayName = FileUtil.getFileNameFromUri(context, destinationUri)
                         )
                     ) {
                         is PdfSaveManager.SaveResult.Success -> {
-                            Toast.makeText(
-                                context,
-                                "PDF saved successfully.",
-                                Toast.LENGTH_LONG
-                            ).show()
+                            viewModel.recordSavedDestination(
+                                uri = result.destinationUri,
+                                displayPath = result.displayPath
+                            )
                         }
                         is PdfSaveManager.SaveResult.Failure -> {
                             Toast.makeText(
