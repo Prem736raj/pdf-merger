@@ -48,7 +48,7 @@ Raw Link:
 ## Play Store Readiness Checklist
 
 - [x] Unique `applicationId` (`com.mergepdf.inone`)
-- [x] Stable `targetSdk = 35` and `compileSdk = 35`
+- [x] Stable `targetSdk = 36` and `compileSdk = 36`
 - [x] R8 minification and resource shrinking enabled for Release
 - [x] ProGuard rules configured
 - [x] Clean namespace (`com.mergepdf.inone`) across all 39 source files

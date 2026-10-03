@@ -16,3 +16,7 @@ debug.keystore
 # Keystore files
 *.jks
 *.keystore
+
+# Build output
+app/release/
+*.aab

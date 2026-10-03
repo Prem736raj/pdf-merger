@@ -2,9 +2,7 @@ package com.mergepdf.inone.ui
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -884,26 +882,6 @@ fun PlayStoreAboutDialog(onDismiss: () -> Unit) {
                             title = "Instant Cleanup",
                             description = "Temporary cache files created during assembly are deleted immediately."
                         )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        OutlinedButton(
-                            onClick = {
-                                val url = "https://github.com/Prem736raj/pdf-merger/blob/main/PRIVACY_POLICY.md"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.OpenInNew,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("View Online Privacy Policy")
-                        }
                     }
                     1 -> {
                         // Features & How to Use

@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.PrivacyTip
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Security
@@ -513,26 +512,6 @@ fun AppSettingsDialog(
                             title = "Instant Cleanup",
                             description = "Temporary cache files created during assembly are deleted immediately."
                         )
-
-                        OutlinedButton(
-                            onClick = {
-                                val url = "https://github.com/Prem736raj/pdf-merger/blob/main/PRIVACY_POLICY.md"
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                context.startActivity(intent)
-                            },
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("view_online_privacy_policy_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.OpenInNew,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("View Online Privacy Policy")
-                        }
 
                         // Google UMP Ad Privacy & Consent Settings (shown when required by UMP)
                         if (ConsentManager.isPrivacyOptionsRequired(context)) {

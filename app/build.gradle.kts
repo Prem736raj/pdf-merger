@@ -6,14 +6,14 @@ plugins {
 
 android {
   namespace = "com.mergepdf.inone"
-  compileSdk = 35
+  compileSdk = 36
 
   defaultConfig {
     applicationId = "com.mergepdf.inone"
     minSdk = 24
-    targetSdk = 35
-    versionCode = 1
-    versionName = "1.0.0"
+    targetSdk = 36
+    versionCode = 2
+    versionName = "1.0.1"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }
@@ -23,6 +23,9 @@ android {
       isMinifyEnabled = true
       isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+      ndk {
+        debugSymbolLevel = "FULL"
+      }
       manifestPlaceholders["admobAppId"] = "ca-app-pub-8204679574020840~5481275930"
       buildConfigField("String", "ADMOB_BANNER_AD_UNIT_ID", "\"ca-app-pub-8204679574020840/3366248480\"")
       buildConfigField("String", "ADMOB_INTERSTITIAL_AD_UNIT_ID", "\"ca-app-pub-8204679574020840/7134192399\"")
